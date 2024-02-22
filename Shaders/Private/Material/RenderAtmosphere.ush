@@ -58,6 +58,7 @@ struct AtmosphereRenderer
 
 		if (RayEnd < RayStart)
 		{
+			// the atmosphere is occluded
 			return;
 		}
 
@@ -76,25 +77,11 @@ struct AtmosphereRenderer
 			// the ray hits terrain before exiting the atmosphere.
 			const float3 RayEndPos = RayOrigin + RayEnd * RayDir;
 
-			// to get in-scattered light only up to the point where terrain begins,
-			// subtract the in-scattered light from that point onwards
-
-			if (true || AtmosphereExit - SceneDepth > SceneDepth - AtmosphereEntry)
-			{
-				// longer way after the hit - reverse ray
-				InScatteredLightOut = GetInScatteredLight(Ctx, RayEndPos, -RayDir)
-					- GetInScatteredLight(Ctx, RayStartPos, -RayDir)
-						* SubtractionFactor; // hack to hide some circular visual artifacts
-			}
-			else
-			{
-				InScatteredLightOut = GetInScatteredLight(Ctx, RayStartPos, RayDir);
-
-				// to get in-scattered light only up to the point where terrain begins,
-				// subtract the in-scattered light from that point onwards
-				InScatteredLightOut -= GetInScatteredLight(Ctx, RayEndPos, RayDir)
+			// if we hit the planet before exiting the atmosphere, cast the ray in reverse.
+			// this yields better results than casting forward and subtracting what lies after the end.
+			InScatteredLightOut = GetInScatteredLight(Ctx, RayEndPos, -RayDir)
+				- GetInScatteredLight(Ctx, RayStartPos, -RayDir)
 					* SubtractionFactor; // hack to hide some circular visual artifacts
-			}
 
 			// Lambertian reflection formula -
 			// to avoid unnaturally lit surfaces at the horizon,

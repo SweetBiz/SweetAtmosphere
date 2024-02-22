@@ -1,0 +1,5 @@
+#pragma once
+
+#include "/Engine/Private/Common.ush"
+
+#define RAY_EPSILON 0.05

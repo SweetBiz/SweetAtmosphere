@@ -1,0 +1,89 @@
+#pragma once
+
+/**
+ * Parameters required for rendering an atmosphere.
+ */
+struct PrecomputedTextures
+{
+	/**
+	 * The precomputed transmittance texture.
+	 */
+	Texture2D TransmittanceTexture;
+
+	/**
+	 * The precomputed in-scattered light texture.
+	 */
+	Texture3D InScatteredLightTexture;
+};
+
+#define LOAD_PRECOMPUTED_TEXTURE_PARAMETERS(Target)     \
+	Target.TransmittanceTexture = TransmittanceTexture; \
+	Target.InScatteredLightTexture = InScatteredLightTexture;
+
+/**
+ * Parameters required to render an atmosphere.
+ */
+struct RenderContext
+{
+	void Init(
+		const PrecomputedTextures _Textures,
+		const float3 _PlanetOrigin,
+		const float _PlanetRadius,
+		const float3 _SunOrigin,
+		const float _AtmosphereScale,
+		const float _SunIntensity,
+		const float _HueShift)
+	{
+		Textures = _Textures;
+		PlanetOrigin = _PlanetOrigin;
+		PlanetRadius = _PlanetRadius;
+		SunLightDir = normalize(_PlanetOrigin - _SunOrigin);
+		AtmosphereRadius = _PlanetRadius * (1 + _AtmosphereScale);
+
+		SunIntensity = _SunIntensity;
+		HueShift = _HueShift;
+	}
+
+	/**
+	 * Atmosphere render settings.
+	 */
+	PrecomputedTextures Textures;
+
+	/**
+	 * The planet origin.
+	 */
+	float3 PlanetOrigin;
+
+	/**
+	 * The planet radius.
+	 */
+	float PlanetRadius;
+
+	/**
+	 * The direction of light rays coming from the sun.
+	 */
+	float3 SunLightDir;
+
+	/**
+	 * The atmosphere radius.
+	 */
+	float AtmosphereRadius;
+
+	/**
+	 * The strength of sunlight.
+	 */
+	float SunIntensity; // 1
+
+	/**
+	 * Hue shift to apply. Values between 0 and 1.
+	 */
+	float HueShift; // 0
+};
+
+#define LOAD_RENDER_CONTEXT_PARAMETERS(Ctx)                  \
+	{                                                        \
+		PrecomputedTextures Tex;                             \
+		LOAD_PRECOMPUTED_TEXTURE_PARAMETERS(Tex)             \
+		Ctx.Init(Tex, PlanetOrigin, PlanetRadius, SunOrigin, \
+			AtmosphereScale, SunIntensity, HueShift);        \
+	}

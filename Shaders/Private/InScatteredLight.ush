@@ -1,0 +1,53 @@
+#pragma once
+
+#include "/Engine/Private/Common.ush"
+
+/**
+ * Looks up the in-scattered light coming in along a given ray.
+ *
+ * @param InScatteredLightTexture The precomputed texture to sample for in-scattering values.
+ * @param RayOriginHeight01 The ray's starting height relative to the atmosphere.
+ * @param RayOriginNormal A vector pointing from planet origin to ray origin. Must be normalized.
+ * @param RayDir The direction of the ray. Must be normalized.
+ * @param SunLightDir The direction of sunlight. Must be normalized.
+ * @return The in-scattered light coming in along the ray.
+ */
+float3 GetInScatteredLight(
+	const Texture3D InScatteredLightTexture,
+	const float RayOriginHeight01,
+	const float3 RayOriginNormal,
+	const float3 RayDir,
+	const float3 SunLightDir)
+{
+	const float x = RayOriginHeight01;
+
+	const float3 DirToRayOrigin = RayOriginNormal;
+	const float RayDirDotProduct = dot(DirToRayOrigin, RayDir);
+	const float y = saturate(1 - (RayDirDotProduct + 1) / 2);
+
+	const float SunDirDotProduct = dot(DirToRayOrigin, SunLightDir);
+	const float z = saturate(1 - (SunDirDotProduct + 1) / 2);
+
+	const float3 uv = float3(x, y, z);
+
+#if SUPPORTS_INDEPENDENT_SAMPLERS && ENABLE_TRILINEAR_FILTERING
+	return Texture3DSample(InScatteredLightTexture, GlobalTrilinearClampedSampler, uv).xyz;
+#else
+	uint w, h, d;
+	InScatteredLightTexture.GetDimensions(w, h, d);
+	return InScatteredLightTexture[uv * float3(w, h, d)].xyz;
+#endif
+}
+
+float3 GetInScatteredLight(
+	const RenderContext Ctx,
+	const float3 RayOrigin,
+	const float3 RayDir)
+{
+	const float StartHeight01 = (length(RayOrigin - Ctx.PlanetOrigin) - Ctx.PlanetRadius)
+		/ (Ctx.AtmosphereRadius - Ctx.PlanetRadius);
+	const float3 RayOriginNormal = normalize(RayOrigin - Ctx.PlanetOrigin);
+
+	return GetInScatteredLight(Ctx.Textures.InScatteredLightTexture,
+		StartHeight01, RayOriginNormal, RayDir, Ctx.SunLightDir);
+}

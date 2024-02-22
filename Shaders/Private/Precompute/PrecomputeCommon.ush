@@ -1,0 +1,24 @@
+#pragma once
+
+#include "../PrecomputeContext.ush"
+
+#define NUMTHREADS_2D [numthreads(8, 8, 1)]
+#define NUMTHREADS_3D [numthreads(8, 8, 8)]
+
+/**
+ * Converts the thread id into 2d UV coordinates based on the given texture's size.
+ * @param TextureName The qualifier of the texture to calculate UV for.
+ */
+#define UV_2D(Target, TextureName)                                             \
+	uint2 TextureName##Size;                                                   \
+	TextureName##.GetDimensions(##TextureName##Size.x, ##TextureName##Size.y); \
+	Target = float2(id.xy) / (float2(##TextureName##Size.xy));
+
+/**
+ * Converts the thread id into 3d UV coordinates based on the given texture's size.
+ * @param TextureName The qualifier of the texture to calculate UV for.
+ */
+#define UV_3D(Target, TextureName)                                                                    \
+	uint3 TextureName##Size;                                                                          \
+	TextureName##.GetDimensions(##TextureName##Size.x, ##TextureName##Size.y, ##TextureName##Size.z); \
+	Target = float3(id.xyz) / (float3(##TextureName##Size.xyz));

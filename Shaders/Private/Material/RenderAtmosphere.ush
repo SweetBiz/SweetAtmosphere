@@ -1,0 +1,114 @@
+#pragma once
+
+// This file is safe for inclusion in Material graph custom nodes.
+// Add the following line at the top of the node's code:
+// #include "/SweetAtmosphere/Material/RenderAtmosphere.ush"
+// Add the following path to "Include File Paths" on the custom material node:
+// /SweetAtmosphere/Material/RenderAtmosphere.inc.ush
+
+#ifdef __JETBRAINS_IDE__
+	#include "RenderAtmosphere.inc.ush"
+#endif
+
+/**
+ * Use this macro in your material node's code to render the atmosphere based on standard parameter names.
+ */
+#define RENDER_ATMOSPHERE()                         \
+	RenderContext Ctx;                              \
+	LOAD_RENDER_CONTEXT_PARAMETERS(Ctx)             \
+	AtmosphereRenderer R;                           \
+	R.Render(Ctx,                                   \
+		RayOrigin, RayDir, SceneDepth, SceneNormal, \
+		InScatteredLight, Color);
+
+struct AtmosphereRenderer
+{
+	/**
+	 * Renders the atmosphere for the given view ray.
+	 *
+	 * @param Ctx The render context.
+	 * @param RayOrigin The view ray origin.
+	 * @param RayDir The normalized view ray direction.
+	 * @param SceneDepth The distance along the ray at which it is stopped by a surface.
+	 * @param SceneNormal The normal of the surface that the ray hits.
+	 * @param InScatteredLightOut The in-scattered light coming in along the view ray.
+	 * @param ColorOut The color to apply to the material's emissive color.
+	 */
+	void Render(
+		const RenderContext Ctx,
+		const float3 RayOrigin,
+		const float3 RayDir,
+		const float SceneDepth,
+		const float3 SceneNormal,
+		out float3 InScatteredLightOut,
+		out float3 ColorOut)
+	{
+		InScatteredLightOut = ColorOut = 0;
+
+		// find atmosphere entry and exit point
+		float AtmosphereEntry, AtmosphereExit;
+		if (!RaySphere(RayOrigin, RayDir, Ctx.PlanetOrigin, Ctx.AtmosphereRadius, AtmosphereEntry, AtmosphereExit))
+		{
+			// the view ray does not intersect the atmosphere.
+			return;
+		}
+
+		const float RayStart = AtmosphereEntry + RAY_EPSILON;
+		const float RayEnd = min(AtmosphereExit, SceneDepth) - RAY_EPSILON;
+
+		if (RayEnd < RayStart)
+		{
+			return;
+		}
+
+		// get in-scattered light along the view ray
+		const float3 RayStartPos = RayOrigin + RayStart * RayDir;
+
+		if (SceneDepth >= AtmosphereExit)
+		{
+			// the ray does not hit terrain before reaching the surface
+			InScatteredLightOut = GetInScatteredLight(Ctx, RayStartPos, RayDir);
+		}
+		else
+		{
+			const float SubtractionFactor = 1.2;
+
+			// the ray hits terrain before exiting the atmosphere.
+			const float3 RayEndPos = RayOrigin + RayEnd * RayDir;
+
+			// to get in-scattered light only up to the point where terrain begins,
+			// subtract the in-scattered light from that point onwards
+
+			if (true || AtmosphereExit - SceneDepth > SceneDepth - AtmosphereEntry)
+			{
+				// longer way after the hit - reverse ray
+				InScatteredLightOut = GetInScatteredLight(Ctx, RayEndPos, -RayDir)
+					- GetInScatteredLight(Ctx, RayStartPos, -RayDir)
+						* SubtractionFactor; // hack to hide some circular visual artifacts
+			}
+			else
+			{
+				InScatteredLightOut = GetInScatteredLight(Ctx, RayStartPos, RayDir);
+
+				// to get in-scattered light only up to the point where terrain begins,
+				// subtract the in-scattered light from that point onwards
+				InScatteredLightOut -= GetInScatteredLight(Ctx, RayEndPos, RayDir)
+					* SubtractionFactor; // hack to hide some circular visual artifacts
+			}
+
+			// Lambertian reflection formula -
+			// to avoid unnaturally lit surfaces at the horizon,
+			// ensure that they can only be brightened by in-scattered light in the foreground
+			// if the surface normal points towards the sun.
+			InScatteredLightOut *= max(0, dot(-Ctx.SunLightDir, SceneNormal)) / PI;
+		}
+
+		InScatteredLightOut *= Ctx.SunIntensity;
+		ColorOut = InScatteredLightOut;
+
+		if (Ctx.HueShift)
+		{
+			ColorOut = ShiftHue(ColorOut, Ctx.HueShift);
+		}
+	}
+};

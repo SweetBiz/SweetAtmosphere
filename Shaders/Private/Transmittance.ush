@@ -1,0 +1,45 @@
+#pragma once
+
+#include "/Engine/Private/Common.ush"
+#include "Particles.ush"
+
+float3 ComputeTransmittance(
+	const PrecomputeContext Ctx,
+	const float2 RayOrigin, const float2 RayDir, const float RayLength,
+	const int NumSteps)
+{
+	const float StepSize = RayLength / (NumSteps);
+	float3 Scattering = 0;
+
+	for (int i = 0; i < NumSteps; i++)
+	{
+		const float2 Pos = RayOrigin + RayDir * ((i + 0.5) * StepSize);
+		const float DistanceFromPlanet01 = length(Pos);
+		const float Height01 = (DistanceFromPlanet01 - 1) / Ctx.AtmosphereScale;
+
+		// combine scattering of all particle profiles
+		const float3 LocalScattering = ComputeCombinedScattering(Ctx, Height01);
+		Scattering += LocalScattering * StepSize;
+	}
+
+	return exp(-Scattering);
+}
+
+float3 GetTransmittance(
+	const Texture2D TransmittanceTexture,
+	const float RayOriginHeight01,
+	const float RayDirDotProduct)
+{
+	const float y = saturate(1 - (RayDirDotProduct + 1) / 2);
+	const float2 uv = float2(RayOriginHeight01, y);
+
+#if SUPPORTS_INDEPENDENT_SAMPLERS
+	// always filter during precomputation if we have the capability,
+	// no additional guard needed
+	return Texture2DSample(TransmittanceTexture, GlobalTrilinearClampedSampler, uv).xyz;
+#else
+	uint w, h;
+	TransmittanceTexture.GetDimensions(w, h);
+	return TransmittanceTexture[uv * float2(w, h)].xyz;
+#endif
+}

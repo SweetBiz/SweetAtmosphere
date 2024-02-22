@@ -1,0 +1,62 @@
+#pragma once
+
+#include "PrecomputeContext.ush"
+
+/**
+ * Calculates the density of a particle profile at the given height.
+ *
+ * @param Profile The particle profile.
+ * @param Height01 The relative height in the atmosphere.
+ * @return The density at this point, in range [0,1].
+ */
+float ComputeProfileDensity(
+	const ParticleProfile Profile,
+	const float Height01)
+{
+	float Density = saturate(exp(-Height01 * Profile.ExponentFactor));
+
+	if (Profile.LinearFadeInSize)
+	{
+		Density = lerp(0, Density, saturate(Height01 / Profile.LinearFadeInSize));
+	}
+	if (Profile.LinearFadeOutSize)
+	{
+		Density = lerp(0, Density, saturate((1 - Height01) / Profile.LinearFadeOutSize));
+	}
+
+	return Density;
+}
+
+/**
+ * Calculates the atmospheric scattering of a particle profile at the given height.
+ *
+ * @param Profile The particle profile.
+ * @param Height01 The relative height in the atmosphere.
+ * @return The scattering coefficients.
+ */
+float3 ComputeScattering(
+	const ParticleProfile Profile,
+	const float Height01)
+{
+	return Profile.ScatteringCoefficients * ComputeProfileDensity(Profile, Height01);
+}
+
+/**
+ * Calculates the scattering coefficients of the atmosphere at the given height,
+ * taking into account all particle profiles.
+ *
+ * @param Ctx The precomputation context.
+ * @param Height01 The relative height in the atmosphere.
+ * @return The combined scattering coefficients.
+ */
+float3 ComputeCombinedScattering(
+	const PrecomputeContext Ctx,
+	const float Height01)
+{
+	float3 Scattering = 0;
+	for (int i = 0; i < Ctx.NumParticleProfiles; i++)
+	{
+		Scattering += ComputeScattering(Ctx.ParticleProfiles[i], Height01);
+	}
+	return Scattering;
+}

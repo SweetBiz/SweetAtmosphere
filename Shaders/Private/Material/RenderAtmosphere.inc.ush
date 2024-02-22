@@ -1,0 +1,15 @@
+#pragma once
+
+#ifndef ENABLE_TRILINEAR_FILTERING
+	// Whether precomputed textures should be sampled linearly.
+	// Disabling this may results in banding at lower texture resolutions.
+	// Disable by setting this to 0 in "Additional Defines".
+	#define ENABLE_TRILINEAR_FILTERING 1
+#endif
+
+#include "../Common.ush"
+#include "../RenderContext.ush"
+#include "../Intersection.ush"
+#include "../Transmittance.ush"
+#include "../InScatteredLight.ush"
+#include "../HueShift.ush"

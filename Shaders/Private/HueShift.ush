@@ -1,0 +1,17 @@
+#pragma once
+
+/**
+ * Shifts the hue of the color.
+ *
+ * @param Color The color to hue shift.
+ * @param HueShift The amount of hue shift, in radians.
+ * @return The hue shifted color.
+ */
+float3 ShiftHue(const float3 Color, const float HueShift)
+{
+	// implementation of Rodrigues' rotation formula, taken from
+	// https://gist.github.com/mairod/a75e7b44f68110e1576d77419d608786?permalink_comment_id=3180018#gistcomment-3180018
+	const float3 k = float3(0.57735, 0.57735, 0.57735);
+	const float CosAngle = cos(HueShift);
+	return Color * CosAngle + cross(k, Color) * sin(HueShift) + k * dot(k, Color) * (1.0 - CosAngle);
+}

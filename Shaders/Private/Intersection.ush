@@ -1,0 +1,150 @@
+#pragma once
+
+/**
+ * Calculates the distance along a ray at which it intersects the given sphere.
+ * Entry and exit distance values can't be negative and are clamped to 0.
+ * The entry distance value is always smaller than the exit distance.
+ *
+ * @param RayOrigin The origin of the ray.
+ * @param RayDir The normalized direction vector of the ray.
+ * @param SphereCenter The center of the sphere to intersect with.
+ * @param SphereRadius The radius of the sphere to intersect with.
+ * @param EntryDistance Returns the distance along the ray
+ *                      at which it intersects the sphere for the first time.
+ *                      Clamped to 0.
+ * @param ExitDistance  Returns the distance along the ray
+ *                      at which it intersects the sphere for the second time.
+ *                      Clamped to 0.
+ * @return Whether the ray intersects the sphere.
+ */
+bool RaySphere(
+	const float3 RayOrigin, const float3 RayDir,
+	const float3 SphereCenter, const float SphereRadius,
+	out float EntryDistance, out float ExitDistance)
+{
+	const float3 Oc = RayOrigin - SphereCenter;
+	const float a = dot(RayDir, RayDir);
+	const float b = 2.0 * dot(RayDir, Oc);
+	const float c = dot(Oc, Oc) - SphereRadius * SphereRadius;
+	const float Discriminant = b * b - 4 * a * c;
+
+	if (Discriminant < 0)
+	{
+		// no line-sphere intersection
+		EntryDistance = 0;
+		ExitDistance = 0;
+		return false;
+	}
+
+	// calculate the two points of intersection
+	const float SqrtDiscriminant = sqrt(Discriminant);
+	const float T0 = (-b - SqrtDiscriminant) / (2.0 * a);
+	const float T1 = (-b + SqrtDiscriminant) / (2.0 * a);
+
+	EntryDistance = T0;
+	ExitDistance = T1;
+
+	if (T0 < 0 && T1 < 0)
+	{
+		// the sphere lies behind the ray origin
+		return false;
+	}
+
+	// sort entry and exit distance and clamp them to lie on the ray
+	EntryDistance = max(0, min(T0, T1));
+	ExitDistance = max(0, max(T0, T1));
+
+	return true;
+}
+
+/**
+ * Performs a ray-sphere intersection check.
+ *
+ * @param RayOrigin The origin of the ray.
+ * @param RayDir The normalized direction vector of the ray.
+ * @param SphereCenter The center of the sphere to intersect with.
+ * @param SphereRadius The radius of the sphere to intersect with.
+ * @return Whether the ray intersects the sphere.
+ */
+bool RaySphere(
+	const float3 RayOrigin, const float3 RayDir,
+	const float3 SphereCenter, const float SphereRadius)
+{
+	float _;
+	return RaySphere(RayOrigin, RayDir, SphereCenter, SphereRadius, _, _);
+}
+
+/**
+ * @see RaySphere
+ */
+bool RayCircle(
+	const float2 RayOrigin, const float2 RayDir,
+	/* const float2 CircleCenter, */ const float CircleRadius,
+	out float EntryDistance, out float ExitDistance)
+{
+	const float2 Oc = RayOrigin /* - CircleCenter */;
+	const float a = dot(RayDir, RayDir);
+	const float b = 2.0 * dot(RayDir, Oc);
+	const float c = dot(Oc, Oc) - CircleRadius * CircleRadius;
+	const float Discriminant = b * b - 4 * a * c;
+
+	if (Discriminant < 0)
+	{
+		// no line-circle intersection
+		EntryDistance = 0;
+		ExitDistance = 0;
+		return false;
+	}
+
+	// calculate the two points of intersection
+	const float SqrtDiscriminant = sqrt(Discriminant);
+	const float T0 = (-b - SqrtDiscriminant) / (2.0 * a);
+	const float T1 = (-b + SqrtDiscriminant) / (2.0 * a);
+
+	EntryDistance = T0;
+	ExitDistance = T1;
+
+	if (T0 < 0 && T1 < 0)
+	{
+		// the sphere lies behind the ray origin
+		return false;
+	}
+
+	// sort entry and exit distance and clamp them to lie on the ray
+	EntryDistance = max(0, min(T0, T1));
+	ExitDistance = max(0, max(T0, T1));
+
+	return true;
+}
+
+float MinDistanceToLineSegment(float3 A, float3 B)
+{
+	float3 AB = B - A;
+	float3 AO = -A; // Vector from A to Origin (0, 0), which is just -A since the origin is (0, 0)
+	float3 BO = -B; // Vector from B to Origin
+
+	// Project vector AO onto AB to find the projection point P, and then
+	// check if P lies within the line segment. If it does, calculate the distance from the origin to P.
+	// If not, return the minimum distance from the origin to either of the endpoints A or B.
+	float AB_squared = dot(AB, AB); // Squared length of AB
+	if (AB_squared == 0.0)
+	{
+		return length(AO); // A and B are the same point
+	}
+
+	// The parameter t represents where the projection of the origin onto the line AB falls
+	// relative to point A. If t is between 0 and 1, the projection falls within the line segment.
+	float t = dot(AO, AB) / AB_squared;
+
+	if (t < 0.0)
+	{
+		return length(AO); // Closer to A
+	}
+	if (t > 1.0)
+	{
+		return length(BO); // Closer to B
+	}
+	// P is the projection of O onto AB, and lies within the line segment
+	float3 P = A + t * AB;
+	return length(P);
+}

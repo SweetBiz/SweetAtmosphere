@@ -1,0 +1,57 @@
+#pragma once
+
+// ReSharper disable once CppUnusedIncludeDirective
+#include "/Engine/Public/Platform.ush" // required import
+
+#include "PrecomputeCommon.ush"
+#include "../Transmittance.ush"
+#include "../Intersection.ush"
+
+DEFINE_PRECOMPUTE_CONTEXT_PARAMETERS()
+
+/**
+ * The amount of density samples to take along the ray.
+ */
+int NumSteps;
+
+/**
+ * The texture to write transmittance to.
+ */
+RWTexture2D<float4> TransmittanceTextureOut;
+
+NUMTHREADS_2D void PrecomputeTransmittanceCS(
+	uint3 id : SV_DispatchThreadID)
+{
+	float2 uv;
+	UV_2D(uv, TransmittanceTextureOut);
+
+	PrecomputeContext Ctx;
+	LOAD_PRECOMPUTE_CONTEXT_PARAMETERS(Ctx);
+
+	// similar to O'Neil 2004, calculate transmittance for every combination of
+	// starting height in atmosphere               (x axis) and
+	// view angle relative to the planet up vector (y axis).
+	// since every slice through the atmosphere that includes its center is identical,
+	// we can break this down into 2-dimensional calculations.
+
+	// relative height in atmosphere encoded on x axis
+	const float Height01 = uv.x;
+
+	// decode 2d view direction from view angle.
+	const float y = -2 * uv.y + 1; // dot product of view direction and the vector from atmosphere center to ray origin, in range -1..1
+	const float x = sin(acos(y));  // acos(y) is the angle between the two vectors in radians
+	const float2 ViewDir = normalize(float2(x, y));
+
+	// the view ray starts inside (or on the top border of) the atmosphere,
+	// perfectly lined up with the planet and sun.
+	const float2 RayOrigin = float2(0, lerp(1, 1 + Ctx.AtmosphereScale, Height01));
+	float EntryDistance, ExitDistance;
+	RayCircle(RayOrigin, ViewDir, 1 + Ctx.AtmosphereScale, EntryDistance, ExitDistance);
+
+	// calculate the transmittance through the atmosphere for the given view direction/height combination.
+	const float3 Transmittance = ComputeTransmittance(Ctx,
+		RayOrigin + EntryDistance * ViewDir, ViewDir,
+		ExitDistance - EntryDistance, NumSteps);
+
+	TransmittanceTextureOut[id.xy] = float4(Transmittance, 1);
+}

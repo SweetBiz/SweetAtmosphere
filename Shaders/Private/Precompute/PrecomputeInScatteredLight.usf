@@ -1,0 +1,129 @@
+#pragma once
+
+// ReSharper disable once CppUnusedIncludeDirective
+#include "/Engine/Public/Platform.ush" // required import
+
+#include "PrecomputeCommon.ush"
+#include "../Transmittance.ush"
+#include "../Intersection.ush"
+
+#ifndef FAR_SIDE_RING_HACK
+	#define FAR_SIDE_RING_HACK 0
+#endif
+
+DEFINE_PRECOMPUTE_CONTEXT_PARAMETERS()
+
+/**
+ * The amount of samples to take.
+ */
+int NumSteps;
+
+/**
+ * The precomputed transmittance.
+ */
+Texture2D<float4> TransmittanceTextureIn;
+
+/**
+ * The output texture to write in-scattering data to.
+ */
+RWTexture3D<float4> InScatteredLightTextureOut;
+
+#define RAY_EPSILON 0.01
+
+NUMTHREADS_3D void PrecomputeInScatteredLightCS(
+	uint3 id : SV_DispatchThreadID)
+{
+	float3 uv;
+	UV_3D(uv, InScatteredLightTextureOut);
+
+	PrecomputeContext Ctx;
+	LOAD_PRECOMPUTE_CONTEXT_PARAMETERS(Ctx);
+
+	// according to Schafhitzel 2007, calculate in-scattered light for every combination of
+	// starting height in atmosphere               (x axis),
+	// view angle relative to the planet up vector (y axis),
+	// sun angle relative to the planet up vector  (z axis).
+	// since every slice through the atmosphere that includes its center is identical,
+	// we can break this down into 2-dimensional calculations.
+
+	// relative height in atmosphere encoded on x axis
+	const float Height01 = uv.x;
+
+	// the direction of the view ray encoded on y axis
+	float2 RayDir;
+	{
+		const float y = -2 * uv.y + 1; // dot product of view direction and the vector from atmosphere center to ray origin, in range -1..1
+		const float x = sin(acos(y));  // acos(y) is the angle between the two vectors in radians
+		RayDir = normalize(float2(x, y));
+	}
+
+	// the direction from which sunlight comes encoded on z axis.
+	// Is assumed to be parallel for all rays.
+	float2 SunLightDir;
+	{
+		const float y = -2 * uv.z + 1; // dot product of sun direction and the vector from atmosphere center to ray origin, in range -1..1
+		const float x = sin(acos(y));  // acos(y) is the angle between the two vectors in radians
+		SunLightDir = normalize(float2(x, y));
+	}
+
+	// the view ray starts inside (or on the top border of) the atmosphere,
+	// perfectly lined up with the planet.
+	const float2 RayOrigin = float2(0, lerp(1, 1 + Ctx.AtmosphereScale, Height01));
+	float AtmosphereEntry, AtmosphereExit;
+	RayCircle(RayOrigin, RayDir, 1 + Ctx.AtmosphereScale, AtmosphereEntry, AtmosphereExit);
+
+	const float RayStart = AtmosphereEntry + RAY_EPSILON;
+	const float RayEnd = AtmosphereExit + RAY_EPSILON;
+	const float RayLength = RayEnd - RayStart;
+	const float StepSize = RayLength / NumSteps;
+
+	float3 InScatteredLight = 0;
+	float3 ViewRayTransmittance = 1;
+
+	// sample in-scattering along the view ray
+	for (int i = 0; i < NumSteps; i++)
+	{
+		// the current position along the view ray
+		const float2 RayPos = RayOrigin + (RayStart + (i + 0.5) * StepSize) * RayDir;
+
+		const float PosHeight = length(RayPos) - 1;
+		const float PosHeight01 = saturate(PosHeight / Ctx.AtmosphereScale);
+
+		// calculate transmittance towards the sun
+		float3 SunRayTransmittance;
+		{
+			const float2 DirToSunRayOrigin = normalize(RayPos);
+			const float SunRayDot = dot(DirToSunRayOrigin, -SunLightDir);
+			SunRayTransmittance = GetTransmittance(TransmittanceTextureIn, PosHeight01, SunRayDot);
+		}
+
+		// calculate the density at the current sample point.
+		// it determines how much in-scattering can occur here.
+		const float3 LocalScattering = ComputeCombinedScattering(Ctx, PosHeight01);
+		ViewRayTransmittance *= exp(-LocalScattering * StepSize);
+
+		const float3 Transmittance = SunRayTransmittance * ViewRayTransmittance;
+		InScatteredLight += LocalScattering * StepSize * Transmittance;
+	}
+
+	// rayleigh phase
+	// TODO: mie phase for mie scattering? allow setting it in particle profile
+	const float CosAngle = dot(RayDir, -SunLightDir);
+	const float RayleighPhase = 3.0 / (16.0 * PI) * (1 + CosAngle * CosAngle);
+	InScatteredLight *= RayleighPhase;
+
+#if FAR_SIDE_RING_HACK
+	if (length(RayOrigin) > length(RayOrigin - SunLightDir))
+	{
+		// the ray starts on the hemisphere pointing away from the sun.
+
+		// at low scattering strengths, a ring of red light
+		// can occur on the planet side opposite from the sun.
+		// this is a hack to remove it by fading out any
+		// in-scattered light that goes through the planet center.
+		InScatteredLight *= 1 - smoothstep(0.2, 0.3, CosAngle);
+	}
+#endif
+
+	InScatteredLightTextureOut[id.xyz] = float4(InScatteredLight.rgb, 1);
+}

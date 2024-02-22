@@ -1,0 +1,82 @@
+#pragma once
+
+/**
+ * Defines the density and scattering of a single type of particles in the atmosphere.
+ */
+struct ParticleProfile
+{
+	/**
+	 * The scattering coefficients for this particle type at maximum density.
+	 */
+	float3 ScatteringCoefficients;
+
+	/**
+	 * The factor f in the density formula exp(-h * f)
+	 */
+	float ExponentFactor;
+
+	/**
+	 * The part of the atmosphere over which density should fade in.
+	 */
+	float LinearFadeInSize;
+
+	/**
+	 * The part of the atmosphere over which density should fade out.
+	 */
+	float LinearFadeOutSize;
+};
+
+#define PARTICLE_PROFILE_FIELD_NAME(ProfileIndex, Name) \
+	ParticleProfile_##ProfileIndex##_##Name##
+
+#define DEFINE_PARTICLE_PROFILE_PARAMETER(ProfileIndex, Type, Name) \
+	Type PARTICLE_PROFILE_FIELD_NAME(ProfileIndex, Name);
+
+#define DEFINE_PARTICLE_PROFILE_PARAMETERS(Index)                            \
+	DEFINE_PARTICLE_PROFILE_PARAMETER(Index, float3, ScatteringCoefficients) \
+	DEFINE_PARTICLE_PROFILE_PARAMETER(Index, float, ExponentFactor)
+
+#define LOAD_PARTICLE_PROFILE(Target, Index)                                                    \
+	Target.ScatteringCoefficients = PARTICLE_PROFILE_FIELD_NAME(Index, ScatteringCoefficients); \
+	Target.ExponentFactor = PARTICLE_PROFILE_FIELD_NAME(Index, ExponentFactor);
+
+struct PrecomputeContext
+{
+	// TODO: we might be able to get rid of this entirely
+	float AtmosphereScale; // 0.2
+
+	/**
+	 * The particle profiles that make up the atmosphere.
+	 */
+	ParticleProfile ParticleProfiles[5];
+
+	/**
+	 * The amount of valid particle profiles in the ParticleProfiles array.
+	 */
+	int NumParticleProfiles;
+};
+
+/**
+ * Defines Precompute Context fields as individual shader parameters.
+ */
+#define DEFINE_PRECOMPUTE_CONTEXT_PARAMETERS() \
+	float AtmosphereScale;                     \
+	int NumParticleProfiles;                   \
+	DEFINE_PARTICLE_PROFILE_PARAMETERS(0)      \
+	DEFINE_PARTICLE_PROFILE_PARAMETERS(1)      \
+	DEFINE_PARTICLE_PROFILE_PARAMETERS(2)      \
+	DEFINE_PARTICLE_PROFILE_PARAMETERS(3)      \
+	DEFINE_PARTICLE_PROFILE_PARAMETERS(4)
+
+/**
+ * Loads shader parameters into a PrecomputeContext instance.
+ * @param Ctx The target precompute context.
+ */
+#define LOAD_PRECOMPUTE_CONTEXT_PARAMETERS(Ctx)       \
+	Ctx.AtmosphereScale = AtmosphereScale;            \
+	Ctx.NumParticleProfiles = NumParticleProfiles;    \
+	LOAD_PARTICLE_PROFILE(Ctx.ParticleProfiles[0], 0) \
+	LOAD_PARTICLE_PROFILE(Ctx.ParticleProfiles[1], 1) \
+	LOAD_PARTICLE_PROFILE(Ctx.ParticleProfiles[2], 2) \
+	LOAD_PARTICLE_PROFILE(Ctx.ParticleProfiles[3], 3) \
+	LOAD_PARTICLE_PROFILE(Ctx.ParticleProfiles[4], 4)

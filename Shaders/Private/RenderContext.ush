@@ -29,7 +29,7 @@ struct RenderContext
 		const PrecomputedTextures _Textures,
 		const float3 _PlanetOrigin,
 		const float _PlanetRadius,
-		const float3 _SunOrigin,
+		const float3 _SunLightDir,
 		const float _AtmosphereScale,
 		const float _SunIntensity,
 		const float _HueShift)
@@ -37,7 +37,7 @@ struct RenderContext
 		Textures = _Textures;
 		PlanetOrigin = _PlanetOrigin;
 		PlanetRadius = _PlanetRadius;
-		SunLightDir = normalize(_PlanetOrigin - _SunOrigin);
+		SunLightDir = _SunLightDir;
 		AtmosphereRadius = _PlanetRadius * (1 + _AtmosphereScale);
 
 		SunIntensity = _SunIntensity;
@@ -80,10 +80,10 @@ struct RenderContext
 	float HueShift; // 0
 };
 
-#define LOAD_RENDER_CONTEXT_PARAMETERS(Ctx)                  \
-	{                                                        \
-		PrecomputedTextures Tex;                             \
-		LOAD_PRECOMPUTED_TEXTURE_PARAMETERS(Tex)             \
-		Ctx.Init(Tex, PlanetOrigin, PlanetRadius, SunOrigin, \
-			AtmosphereScale, SunIntensity, HueShift);        \
+#define LOAD_RENDER_CONTEXT_PARAMETERS(Ctx)                    \
+	{                                                          \
+		PrecomputedTextures Tex;                               \
+		LOAD_PRECOMPUTED_TEXTURE_PARAMETERS(Tex)               \
+		Ctx.Init(Tex, PlanetOrigin, PlanetRadius, SunLightDir, \
+			AtmosphereScale, SunIntensity, HueShift);          \
 	}

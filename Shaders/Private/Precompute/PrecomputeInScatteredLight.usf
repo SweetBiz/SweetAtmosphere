@@ -122,6 +122,9 @@ NUMTHREADS_3D void PrecomputeInScatteredLightCS(
 		// this is a hack to remove it by fading out any
 		// in-scattered light that goes through the planet center.
 		InScatteredLight *= 1 - smoothstep(0.2, 0.3, CosAngle);
+
+		// is this caused by rays accumulating in-scattered light through the planet's body?
+		// TODO: investigate causes and alternate fixes, such as density = 0 at planet body?
 	}
 #endif
 

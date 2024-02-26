@@ -1,7 +1,6 @@
 #pragma once
 
 #include "AtmosphereSettings.h"
-#include "Engine/VolumeTexture.h"
 #include "SweetAtmosphereShaders/Public/Precompute/PrecomputeShader.h"
 #include "Kismet/BlueprintAsyncActionBase.h"
 #include "AtmospherePrecompute.generated.h"
@@ -18,6 +17,19 @@ class SWEETATMOSPHERE_API UAtmospherePrecomputeAction : public UBlueprintAsyncAc
 {
 	GENERATED_BODY()
 public:
+	/**
+	 * Precomputes atmospheric scattering textures for
+	 * later use in a material graph or shader.
+	 *
+	 * @param TextureSettings Texture settings.
+	 * @param AtmosphereSettings Atmosphere settings.
+	 * @param Callback The callback to run on the game thread when precomputation has finished.
+	 */
+	static void PrecomputeAtmosphericScattering(
+		const FPrecomputedTextureSettings& TextureSettings,
+		const FAtmosphereSettings& AtmosphereSettings,
+		const TFunction<void(FAtmospherePrecomputedTextures Textures)>& Callback);
+
 	/**
 	 * Precomputes atmospheric scattering textures for
 	 * later use in a material graph or shader.
@@ -60,13 +72,24 @@ private:
 };
 
 /**
- * Helper functions to precompute atmospheric scattering from blueprints.
+ * Helper functions to apply the precomputed atmosphere to materials.
  */
 UCLASS()
-class SWEETATMOSPHERE_API UAtmospherePrecomputeHelper : public UObject
+class SWEETATMOSPHERE_API UAtmosphereMaterialHelper : public UObject
 {
 	GENERATED_BODY()
 public:
+	/**
+	 * Creates an instance of the atmosphere material using to the given parameters.
+	 *
+	 * @param ParentMaterial The parent material to create an instance from.
+	 * @param AtmosphereSettings The atmosphere settings.
+	 * @param PrecomputedTextures The precomputed textures using these atmosphere settings.
+	 * @return The configured material instance.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Atmosphere")
+	static UMaterialInstanceDynamic* CreateAtmosphereMaterial(UMaterialInterface* ParentMaterial, const FAtmosphereSettings& AtmosphereSettings, const FAtmospherePrecomputedTextures& PrecomputedTextures);
+
 	/**
 	 * Applies the atmosphere settings to the given material instance for rendering.
 	 *
@@ -74,23 +97,14 @@ public:
 	 * @param Atmosphere The atmosphere settings.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Atmosphere")
-	static void BindAtmosphereSettings(UMaterialInstanceDynamic* MaterialInstance, const FAtmosphereSettings& Atmosphere)
-	{
-		MaterialInstance->SetScalarParameterValue("AtmosphereScale", Atmosphere.AtmosphereScale);
-		MaterialInstance->SetScalarParameterValue("SunIntensity", Atmosphere.SunIntensity);
-		MaterialInstance->SetScalarParameterValue("HueShift", Atmosphere.HueShift);
-	}
+	static void BindAtmosphereSettings(UMaterialInstanceDynamic* MaterialInstance, const FAtmosphereSettings& Atmosphere);
 
 	/**
 	 * Applies the precomputed atmosphere textures to the given material instance for rendering.
 	 *
 	 * @param MaterialInstance The target material instance.
-	 * @param Textures The textures to bind.
+	 * @param PrecomputedTextures The precomputed textures to bind.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Atmosphere")
-	static void BindPrecomputedTextures(UMaterialInstanceDynamic* MaterialInstance, const FAtmospherePrecomputedTextures& Textures)
-	{
-		MaterialInstance->SetTextureParameterValue("TransmittanceTexture", Textures.TransmittanceTexture);
-		MaterialInstance->SetTextureParameterValue("InScatteredLightTexture", Textures.InScatteredLightTexture);
-	}
+	static void BindPrecomputedTextures(UMaterialInstanceDynamic* MaterialInstance, const FAtmospherePrecomputedTextures& PrecomputedTextures);
 };

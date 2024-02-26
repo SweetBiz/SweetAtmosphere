@@ -61,6 +61,9 @@ struct SWEETATMOSPHERESHADERS_API FAtmosphereSettings
 	UPROPERTY(BlueprintReadWrite)
 	float HueShift = 0;
 
+	/**
+	 * The particle profiles that make up the atmosphere.
+	 */
 	UPROPERTY(BlueprintReadWrite)
 	TArray<FParticleProfile> ParticleProfiles;
 };

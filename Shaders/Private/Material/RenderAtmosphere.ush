@@ -11,14 +11,59 @@
 #endif
 
 /**
- * Use this macro in your material node's code to render the atmosphere based on standard parameter names.
+ * Use this macro in your material node's code to render the atmosphere using the following variables:
+ *
+ * Texture2D TransmittanceTexture
+ * Texture3D InScatteredLightTexture
+
+ * float AtmosphereScale
+ * float SunIntensity
+ * float HueShift
+ *
+ * float3 PlanetOrigin
+ * float PlanetRadius
+ * float3 SunOrigin
+ * float3 RayOrigin
+ * float3 RayDir
+ *
+ * float SceneDepth
+ * float3 SceneNormal
+ *
+ * out float3 InScatteredLight
+ * out float3 Color
  */
-#define RENDER_ATMOSPHERE()                         \
-	RenderContext Ctx;                              \
-	LOAD_RENDER_CONTEXT_PARAMETERS(Ctx)             \
-	AtmosphereRenderer R;                           \
-	R.Render(Ctx,                                   \
-		RayOrigin, RayDir, SceneDepth, SceneNormal, \
+#define RENDER_ATMOSPHERE()                                   \
+	float3 SunLightDir = normalize(PlanetOrigin - SunOrigin); \
+	RenderContext Ctx;                                        \
+	LOAD_RENDER_CONTEXT_PARAMETERS(Ctx)                       \
+	AtmosphereRenderer R;                                     \
+	R.Render(Ctx,                                             \
+		RayOrigin, RayDir, SceneDepth, SceneNormal,           \
+		InScatteredLight, Color);
+
+/**
+ * Use this macro in your material node's code to render the skybox using the following variables:
+ *
+ * Texture2D TransmittanceTexture
+ * Texture3D InScatteredLightTexture
+ * float AtmosphereScale
+ * float SunIntensity
+ * float HueShift
+ *
+ * float3 SunLightDir
+ * float3 RayDir
+ *
+ * out float3 InScatteredLight
+ * out float3 Color
+ */
+#define RENDER_SKYBOX()                 \
+	float3 PlanetOrigin = 0;            \
+	float PlanetRadius = 1;             \
+	RenderContext Ctx;                  \
+	LOAD_RENDER_CONTEXT_PARAMETERS(Ctx) \
+	AtmosphereRenderer R;               \
+	R.Render(Ctx,                       \
+		0, RayDir, -1, 0,               \
 		InScatteredLight, Color);
 
 struct AtmosphereRenderer
@@ -53,8 +98,32 @@ struct AtmosphereRenderer
 			return;
 		}
 
-		const float RayStart = AtmosphereEntry + RAY_EPSILON;
-		const float RayEnd = min(AtmosphereExit, SceneDepth) - RAY_EPSILON;
+		// determine intersection with planet radius
+		float PlanetEntry, PlanetExit;
+		RaySphere(RayOrigin, RayDir, Ctx.PlanetOrigin, Ctx.PlanetRadius, PlanetEntry, PlanetExit);
+
+		float RayStart = AtmosphereEntry;
+		if (PlanetEntry <= 0 && PlanetExit > 0)
+		{
+			// the ray starts from inside the planet -
+			// start on the surface of the planet
+			RayStart = PlanetExit;
+		}
+
+		float RayEnd = AtmosphereExit;
+
+		if (SceneDepth >= 0)
+		{
+			RayEnd = min(RayEnd, SceneDepth);
+		}
+
+		if (PlanetEntry > 0)
+		{
+			RayEnd = min(RayEnd, PlanetEntry);
+		}
+
+		RayStart += RAY_EPSILON;
+		RayEnd -= RAY_EPSILON;
 
 		if (RayEnd < RayStart)
 		{
@@ -65,9 +134,9 @@ struct AtmosphereRenderer
 		// get in-scattered light along the view ray
 		const float3 RayStartPos = RayOrigin + RayStart * RayDir;
 
-		if (SceneDepth >= AtmosphereExit)
+		if (RayEnd >= AtmosphereExit)
 		{
-			// the ray does not hit terrain before reaching the surface
+			// the ray can pass through the atmosphere unobstructed
 			InScatteredLightOut = GetInScatteredLight(Ctx, RayStartPos, RayDir);
 		}
 		else

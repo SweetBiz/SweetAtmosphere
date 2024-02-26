@@ -66,22 +66,20 @@ class SWEETATMOSPHERESHADERS_API FAtmospherePrecomputeShaderDispatcher
 {
 public:
 	static void Dispatch(
-		const FPrecomputedTextureSettings& TextureSettings,
-		const FPrecomputeContext& AtmosphereGenerationSettings,
-		const TFunction<void(FAtmospherePrecomputedTextures)>& AsyncCallback,
+		FPrecomputedTextureSettings TextureSettings,
+		FPrecomputeContext AtmosphereGenerationSettings,
+		TFunction<void(FAtmospherePrecomputedTextures)> AsyncCallback,
 		FAtmospherePrecomputeDebugTextures* DebugTexturesOut = nullptr);
 
 private:
 	static void DispatchGameThread(
-		const FPrecomputedTextureSettings& TextureSettings,
-		const FPrecomputeContext& AtmosphereGenerationSettings,
-		const TFunction<void(FAtmospherePrecomputedTextures)>& AsyncCallback,
-		FAtmospherePrecomputeDebugTextures* DebugTexturesOut = nullptr);
+		FPrecomputedTextureSettings TextureSettings,
+		FPrecomputeContext GenerationSettings,
+		TFunction<void(FAtmospherePrecomputedTextures)> AsyncCallback, FAtmospherePrecomputeDebugTextures* DebugTexturesOut = nullptr);
 
 	static void DispatchRenderThread(
 		FRHICommandListImmediate& RHICmdList,
-		const FPrecomputedTextureSettings& TextureSettings,
-		const FPrecomputeContext& AtmosphereGenerationSettings,
-		const TFunction<void(FAtmospherePrecomputedTextures)>& AsyncCallback,
-		FAtmospherePrecomputeDebugTextures* DebugTexturesOut = nullptr);
+		FPrecomputedTextureSettings TextureSettings,
+		FPrecomputeContext Ctx,
+		TFunction<void(FAtmospherePrecomputedTextures)> AsyncCallback, FAtmospherePrecomputeDebugTextures* DebugTexturesOut = nullptr);
 };

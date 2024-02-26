@@ -47,9 +47,9 @@ IMPLEMENT_SHADER_TYPE(,
 	SF_Compute);
 
 void FAtmospherePrecomputeShaderDispatcher::Dispatch(
-	const FPrecomputedTextureSettings& TextureSettings,
-	const FPrecomputeContext& AtmosphereGenerationSettings,
-	const TFunction<void(FAtmospherePrecomputedTextures)>& AsyncCallback,
+	FPrecomputedTextureSettings TextureSettings,
+	FPrecomputeContext AtmosphereGenerationSettings,
+	TFunction<void(FAtmospherePrecomputedTextures)> AsyncCallback,
 	FAtmospherePrecomputeDebugTextures* DebugTexturesOut)
 {
 	if (IsInRenderingThread())
@@ -64,14 +64,14 @@ void FAtmospherePrecomputeShaderDispatcher::Dispatch(
 }
 
 void FAtmospherePrecomputeShaderDispatcher::DispatchGameThread(
-	const FPrecomputedTextureSettings& TextureSettings,
-	const FPrecomputeContext& GenerationSettings,
-	const TFunction<void(FAtmospherePrecomputedTextures)>& AsyncCallback,
+	FPrecomputedTextureSettings TextureSettings,
+	FPrecomputeContext GenerationSettings,
+	TFunction<void(FAtmospherePrecomputedTextures)> AsyncCallback,
 	FAtmospherePrecomputeDebugTextures* DebugTexturesOut)
 {
 	ENQUEUE_RENDER_COMMAND(SceneDrawCompletion)
 	(
-		[&TextureSettings, &GenerationSettings, AsyncCallback, DebugTexturesOut](FRHICommandListImmediate& RHICmdList) {
+		[TextureSettings, GenerationSettings, AsyncCallback, DebugTexturesOut](FRHICommandListImmediate& RHICmdList) {
 			DispatchRenderThread(RHICmdList, TextureSettings, GenerationSettings, AsyncCallback, DebugTexturesOut);
 		});
 }
@@ -213,9 +213,9 @@ DECLARE_CYCLE_STAT(TEXT("Atmosphere Precompute Execute"), STAT_AtmospherePrecomp
 
 void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 	FRHICommandListImmediate& RHICmdList,
-	const FPrecomputedTextureSettings& TextureSettings,
-	const FPrecomputeContext& GenerationSettings,
-	const TFunction<void(FAtmospherePrecomputedTextures)>& AsyncCallback,
+	FPrecomputedTextureSettings TextureSettings,
+	FPrecomputeContext Ctx,
+	TFunction<void(FAtmospherePrecomputedTextures)> AsyncCallback,
 	FAtmospherePrecomputeDebugTextures* DebugTexturesOut)
 {
 	FRDGBuilder GraphBuilder(RHICmdList);
@@ -257,7 +257,7 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 			}
 
 			auto* PassParams = GraphBuilder.AllocParameters<FTransmittancePrecomputeCS::FParameters>();
-			PassParams->Ctx = GenerationSettings;
+			PassParams->Ctx = Ctx;
 			PassParams->NumSteps = TextureSettings.TransmittanceSampleSteps;
 			PassParams->TransmittanceTextureOut = Transmittance.UAV;
 
@@ -282,7 +282,7 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 			}
 
 			auto* PassParams = GraphBuilder.AllocParameters<FInScatteredLightPrecomputeCS::FParameters>();
-			PassParams->Ctx = GenerationSettings;
+			PassParams->Ctx = Ctx;
 			PassParams->NumSteps = TextureSettings.InScatteredLightSampleSteps;
 			PassParams->TransmittanceTextureIn = Transmittance.SRV;
 			PassParams->InScatteredLightTextureOut = InScatteredLight.UAV;

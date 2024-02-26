@@ -21,8 +21,8 @@ public class SweetAtmosphere : ModuleRules
 				"CoreUObject",
 				"Engine",
 				"Slate",
-				"SlateCore", "ImageWriteQueue", "ImageWriteQueue"
-				// ... add private dependencies that you statically link with here ...	
+				"SlateCore",
+				"ImageWriteQueue",
 			}
 		);
 	}

@@ -1,5 +1,8 @@
 #include "AtmospherePrecompute.h"
 
+#include "Interfaces/IPluginManager.h"
+#include "Engine/VolumeTexture.h"
+
 #define PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, Name) \
 	ParticleProfile_##ProfileIndex##_##Name
 
@@ -13,13 +16,9 @@
 		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, LinearFadeOutSize) = Profile.LinearFadeOutSize;                      \
 	}
 
-UAtmospherePrecomputeAction* UAtmospherePrecomputeAction::PrecomputeAtmosphericScattering(
-	const UObject* WorldContextObject,
-	const FPrecomputedTextureSettings& TextureSettings,
-	const FAtmosphereSettings& AtmosphereSettings,
-	const bool GenerateDebugTextures)
+FPrecomputeContext CreatePrecomputeContext(
+	const FAtmosphereSettings& AtmosphereSettings)
 {
-	// set shader parameters
 	FPrecomputeContext Ctx;
 	Ctx.AtmosphereScale = AtmosphereSettings.AtmosphereScale;
 
@@ -30,6 +29,26 @@ UAtmospherePrecomputeAction* UAtmospherePrecomputeAction::PrecomputeAtmosphericS
 	APPLY_PARTICLE_PROFILE(Ctx, 2)
 	APPLY_PARTICLE_PROFILE(Ctx, 3)
 	APPLY_PARTICLE_PROFILE(Ctx, 4)
+
+	return Ctx;
+}
+
+void UAtmospherePrecomputeAction::PrecomputeAtmosphericScattering(
+	const FPrecomputedTextureSettings& TextureSettings,
+	const FAtmosphereSettings& AtmosphereSettings,
+	const TFunction<void(FAtmospherePrecomputedTextures Textures)>& Callback)
+{
+	const auto Ctx = CreatePrecomputeContext(AtmosphereSettings);
+	FAtmospherePrecomputeShaderDispatcher::Dispatch(TextureSettings, Ctx, Callback);
+}
+
+UAtmospherePrecomputeAction* UAtmospherePrecomputeAction::PrecomputeAtmosphericScattering(
+	const UObject* WorldContextObject,
+	const FPrecomputedTextureSettings& TextureSettings,
+	const FAtmosphereSettings& AtmosphereSettings,
+	const bool GenerateDebugTextures)
+{
+	const auto Ctx = CreatePrecomputeContext(AtmosphereSettings);
 
 	auto* Action = NewObject<UAtmospherePrecomputeAction>();
 	Action->Init(TextureSettings, Ctx, GenerateDebugTextures);
@@ -58,4 +77,30 @@ void UAtmospherePrecomputeAction::Activate()
 			SetReadyToDestroy();
 		},
 		GenerateDebugTextures ? &DebugTextures : nullptr);
+}
+
+UMaterialInstanceDynamic* UAtmosphereMaterialHelper::CreateAtmosphereMaterial(
+	UMaterialInterface* ParentMaterial,
+	const FAtmosphereSettings& AtmosphereSettings,
+	const FAtmospherePrecomputedTextures& PrecomputedTextures)
+{
+	auto* Instance = UMaterialInstanceDynamic::Create(ParentMaterial, nullptr);
+
+	BindAtmosphereSettings(Instance, AtmosphereSettings);
+	BindPrecomputedTextures(Instance, PrecomputedTextures);
+
+	return Instance;
+}
+
+void UAtmosphereMaterialHelper::BindAtmosphereSettings(UMaterialInstanceDynamic* MaterialInstance, const FAtmosphereSettings& Atmosphere)
+{
+	MaterialInstance->SetScalarParameterValue("AtmosphereScale", Atmosphere.AtmosphereScale);
+	MaterialInstance->SetScalarParameterValue("SunIntensity", Atmosphere.SunIntensity);
+	MaterialInstance->SetScalarParameterValue("HueShift", Atmosphere.HueShift);
+}
+
+void UAtmosphereMaterialHelper::BindPrecomputedTextures(UMaterialInstanceDynamic* MaterialInstance, const FAtmospherePrecomputedTextures& PrecomputedTextures)
+{
+	MaterialInstance->SetTextureParameterValue("TransmittanceTexture", PrecomputedTextures.TransmittanceTexture);
+	MaterialInstance->SetTextureParameterValue("InScatteredLightTexture", PrecomputedTextures.InScatteredLightTexture);
 }

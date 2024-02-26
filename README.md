@@ -25,4 +25,4 @@ and binding them to the atmosphere material.
 It is recommended to apply the atmosphere material to a cube with inverted normals. Such a mesh is supplied in the plugin content.
 
 ## License
-This project is GPL-3.0 licensed. Please make sure you comply with the license terms when using this library.
+This project is licensed under the MIT License. Please make sure you comply with the license terms when using this library.

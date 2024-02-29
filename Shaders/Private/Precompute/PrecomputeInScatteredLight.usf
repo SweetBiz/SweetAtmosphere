@@ -71,11 +71,21 @@ NUMTHREADS_3D void PrecomputeInScatteredLightCS(
 	// the view ray starts inside (or on the top border of) the atmosphere,
 	// perfectly lined up with the planet.
 	const float2 RayOrigin = float2(0, lerp(1, 1 + Ctx.AtmosphereScale, Height01));
-	float AtmosphereEntry, AtmosphereExit;
-	RayCircle(RayOrigin, RayDir, 1 + Ctx.AtmosphereScale, AtmosphereEntry, AtmosphereExit);
+	float AtmosphereEntryDistance, AtmosphereExitDistance;
+	RayCircle(RayOrigin, RayDir, 1 + Ctx.AtmosphereScale, AtmosphereEntryDistance, AtmosphereExitDistance);
 
-	const float RayStart = AtmosphereEntry + RAY_EPSILON;
-	const float RayEnd = AtmosphereExit + RAY_EPSILON;
+	float RayStart = AtmosphereEntryDistance;
+	float RayEnd = AtmosphereExitDistance;
+
+	// end ray when it hits the planet
+	float PlanetEntryDistance, PlanetExitDistance;
+	if (RayCircle(RayOrigin, RayDir, 1, PlanetEntryDistance, PlanetExitDistance))
+	{
+		RayEnd = PlanetEntryDistance;
+	}
+
+	RayStart += RAY_EPSILON;
+	RayEnd -= RAY_EPSILON;
 	const float RayLength = RayEnd - RayStart;
 	const float StepSize = RayLength / NumSteps;
 
@@ -119,7 +129,7 @@ NUMTHREADS_3D void PrecomputeInScatteredLightCS(
 		// can occur on the planet side opposite from the sun.
 		// this is a hack to remove it by fading out any
 		// in-scattered light that goes through the planet center.
-		InScatteredLight *= 1 - smoothstep(0.2, 0.3, CosAngle);
+		InScatteredLight *= 1 - smoothstep(0.05, 0.35, CosAngleViewRaySunRay);
 
 		// is this caused by rays accumulating in-scattered light through the planet's body?
 		// TODO: investigate causes and alternate fixes, such as density = 0 at planet body?

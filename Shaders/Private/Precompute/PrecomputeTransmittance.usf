@@ -40,18 +40,21 @@ NUMTHREADS_2D void PrecomputeTransmittanceCS(
 	// decode 2d view direction from view angle.
 	const float y = -2 * uv.y + 1; // dot product of view direction and the vector from atmosphere center to ray origin, in range -1..1
 	const float x = sin(acos(y));  // acos(y) is the angle between the two vectors in radians
-	const float2 ViewDir = normalize(float2(x, y));
+	const float2 RayDir = normalize(float2(x, y));
 
 	// the view ray starts inside (or on the top border of) the atmosphere,
 	// perfectly lined up with the planet and sun.
 	const float2 RayOrigin = float2(0, lerp(1, 1 + Ctx.AtmosphereScale, Height01));
-	float EntryDistance, ExitDistance;
-	RayCircle(RayOrigin, ViewDir, 1 + Ctx.AtmosphereScale, EntryDistance, ExitDistance);
+	float AtmosphereEntryDistance, AtmosphereExitDistance;
+	RayCircle(RayOrigin, RayDir, 1 + Ctx.AtmosphereScale, AtmosphereEntryDistance, AtmosphereExitDistance);
+
+	const float RayStart = AtmosphereEntryDistance;
+	const float RayEnd = AtmosphereExitDistance;
 
 	// calculate the transmittance through the atmosphere for the given view direction/height combination.
 	const float3 Transmittance = ComputeTransmittance(Ctx,
-		RayOrigin + EntryDistance * ViewDir, ViewDir,
-		ExitDistance - EntryDistance, NumSteps);
+		RayOrigin + RayStart * RayDir, RayDir,
+		RayEnd - RayStart, NumSteps);
 
 	TransmittanceTextureOut[id.xy] = float4(Transmittance, 1);
 }

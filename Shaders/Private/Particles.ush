@@ -57,7 +57,7 @@ float ComputePhaseFunction(
  * @param CosAngle The dot product of 2 vectors.
  * @return The combined in-scattering coefficients.
  */
-float ComputeInScatteringCoefficients(
+float3 ComputeInScatteringCoefficients(
 	const PrecomputeContext Ctx,
 	const float Height01,
 	const float CosAngle)

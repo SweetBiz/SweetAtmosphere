@@ -18,7 +18,7 @@ float3 ComputeTransmittance(
 		const float Height01 = (DistanceFromPlanet01 - 1) / Ctx.AtmosphereScale;
 
 		// combine scattering of all particle profiles
-		const float3 LocalScattering = ComputeCombinedScattering(Ctx, Height01);
+		const float3 LocalScattering = ComputeCombinedScatteringCoefficients(Ctx, Height01);
 		Scattering += LocalScattering * StepSize;
 	}
 

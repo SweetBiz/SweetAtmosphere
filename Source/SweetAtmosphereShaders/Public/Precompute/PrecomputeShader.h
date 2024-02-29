@@ -44,6 +44,7 @@ struct SWEETATMOSPHERESHADERS_API FAtmospherePrecomputeDebugTextures
 	SHADER_PARAMETER(Type, ParticleProfile_##ProfileIndex##_##Name)
 
 #define PARTICLE_PROFILE_PARAMETERS(Index)                               \
+	PARTICLE_PROFILE_PARAMETER(Index, int, PhaseFunction)                \
 	PARTICLE_PROFILE_PARAMETER(Index, FVector3f, ScatteringCoefficients) \
 	PARTICLE_PROFILE_PARAMETER(Index, float, ExponentFactor)             \
 	PARTICLE_PROFILE_PARAMETER(Index, float, LinearFadeInSize)           \

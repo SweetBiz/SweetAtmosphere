@@ -28,13 +28,61 @@ float ComputeProfileDensity(
 }
 
 /**
+ * Evaluates a particle profile's phase function.
+ *
+ * @param Profile The particle profile.
+ * @param CosAngle The dot product of 2 vectors.
+ * @return The phase function's result.
+ */
+float ComputePhaseFunction(
+	const ParticleProfile Profile,
+	const float CosAngle)
+{
+	switch (Profile.PhaseFunction)
+	{
+		default:
+		case 0:
+			return 1;
+		case 1: // rayleigh phase
+			return 3.0 / (16.0 * PI) * (1 + CosAngle * CosAngle);
+	}
+}
+
+/**
+ * Computes the in-scattering coefficients of the atmosphere
+ * given an angle between view and sun ray.
+ *
+ * @param Ctx The precomputation context.
+ * @param Height01 The relative height in the atmosphere.
+ * @param CosAngle The dot product of 2 vectors.
+ * @return The combined in-scattering coefficients.
+ */
+float ComputeInScatteringCoefficients(
+	const PrecomputeContext Ctx,
+	const float Height01,
+	const float CosAngle)
+{
+	float3 Coeffs = 1;
+	for (int i = 0; i < Ctx.NumParticleProfiles; i++)
+	{
+		const ParticleProfile Profile = Ctx.ParticleProfiles[i];
+		Coeffs *=
+			ComputeProfileDensity(Profile, Height01)
+			* Profile.ScatteringCoefficients
+			* ComputePhaseFunction(Profile, CosAngle);
+	}
+
+	return Coeffs;
+}
+
+/**
  * Calculates the atmospheric scattering of a particle profile at the given height.
  *
  * @param Profile The particle profile.
  * @param Height01 The relative height in the atmosphere.
  * @return The scattering coefficients.
  */
-float3 ComputeScattering(
+float3 ComputeScatteringCoefficients(
 	const ParticleProfile Profile,
 	const float Height01)
 {
@@ -49,14 +97,14 @@ float3 ComputeScattering(
  * @param Height01 The relative height in the atmosphere.
  * @return The combined scattering coefficients.
  */
-float3 ComputeCombinedScattering(
+float3 ComputeCombinedScatteringCoefficients(
 	const PrecomputeContext Ctx,
 	const float Height01)
 {
 	float3 Scattering = 0;
 	for (int i = 0; i < Ctx.NumParticleProfiles; i++)
 	{
-		Scattering += ComputeScattering(Ctx.ParticleProfiles[i], Height01);
+		Scattering += ComputeScatteringCoefficients(Ctx.ParticleProfiles[i], Height01);
 	}
 	return Scattering;
 }

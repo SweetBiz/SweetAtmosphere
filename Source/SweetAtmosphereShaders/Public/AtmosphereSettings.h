@@ -3,10 +3,23 @@
 #include "CoreMinimal.h"
 #include "AtmosphereSettings.generated.h"
 
+UENUM(BlueprintType)
+enum class EPhaseFunction : uint8
+{
+	None,
+	Rayleigh
+};
+
 USTRUCT(BlueprintType)
 struct SWEETATMOSPHERESHADERS_API FParticleProfile
 {
 	GENERATED_BODY()
+
+	/**
+	 * The phase function to apply for this particle profile.
+	 */
+	UPROPERTY(BlueprintReadWrite)
+	EPhaseFunction PhaseFunction = EPhaseFunction::None;
 
 	/**
 	 * The scattering coefficients for this particle type at maximum density.

@@ -66,6 +66,8 @@ NUMTHREADS_3D void PrecomputeInScatteredLightCS(
 		SunLightDir = normalize(float2(x, y));
 	}
 
+	const float CosAngleViewRaySunRay = dot(RayDir, -SunLightDir);
+
 	// the view ray starts inside (or on the top border of) the atmosphere,
 	// perfectly lined up with the planet.
 	const float2 RayOrigin = float2(0, lerp(1, 1 + Ctx.AtmosphereScale, Height01));
@@ -99,18 +101,14 @@ NUMTHREADS_3D void PrecomputeInScatteredLightCS(
 
 		// calculate the density at the current sample point.
 		// it determines how much in-scattering can occur here.
-		const float3 LocalScattering = ComputeCombinedScattering(Ctx, PosHeight01);
+		const float3 LocalScattering = ComputeCombinedScatteringCoefficients(Ctx, PosHeight01);
 		ViewRayTransmittance *= exp(-LocalScattering * StepSize);
 
-		const float3 Transmittance = SunRayTransmittance * ViewRayTransmittance;
-		InScatteredLight += LocalScattering * StepSize * Transmittance;
-	}
+		const float3 InScatterCoeffs = exp(-ComputeInScatteringCoefficients(Ctx, PosHeight01, CosAngleViewRaySunRay) * StepSize);
 
-	// rayleigh phase
-	// TODO: mie phase for mie scattering? allow setting it in particle profile
-	const float CosAngle = dot(RayDir, -SunLightDir);
-	const float RayleighPhase = 3.0 / (16.0 * PI) * (1 + CosAngle * CosAngle);
-	InScatteredLight *= RayleighPhase;
+		const float3 Transmittance = SunRayTransmittance * ViewRayTransmittance;
+		InScatteredLight += LocalScattering * StepSize * Transmittance * InScatterCoeffs;
+	}
 
 #if FAR_SIDE_RING_HACK
 	if (length(RayOrigin) > length(RayOrigin - SunLightDir))

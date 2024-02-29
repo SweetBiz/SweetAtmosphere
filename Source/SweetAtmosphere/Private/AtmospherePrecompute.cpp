@@ -6,14 +6,15 @@
 #define PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, Name) \
 	ParticleProfile_##ProfileIndex##_##Name
 
-#define APPLY_PARTICLE_PROFILE(Target, ProfileIndex)                                                                              \
-	if (AtmosphereSettings.ParticleProfiles.Num() > ProfileIndex)                                                                 \
-	{                                                                                                                             \
-		const auto& Profile = AtmosphereSettings.ParticleProfiles[ProfileIndex];                                                  \
-		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, ScatteringCoefficients) = FVector3f(Profile.ScatteringCoefficients); \
-		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, ExponentFactor) = Profile.ExponentFactor;                            \
-		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, LinearFadeInSize) = Profile.LinearFadeInSize;                        \
-		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, LinearFadeOutSize) = Profile.LinearFadeOutSize;                      \
+#define APPLY_PARTICLE_PROFILE(Target, ProfileIndex)                                                                                                          \
+	if (AtmosphereSettings.ParticleProfiles.Num() > ProfileIndex)                                                                                             \
+	{                                                                                                                                                         \
+		const auto& Profile = AtmosphereSettings.ParticleProfiles[ProfileIndex];                                                                              \
+		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, PhaseFunction) = static_cast<std::underlying_type<EPhaseFunction>::type>(Profile.PhaseFunction); \
+		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, ScatteringCoefficients) = FVector3f(Profile.ScatteringCoefficients);                             \
+		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, ExponentFactor) = Profile.ExponentFactor;                                                        \
+		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, LinearFadeInSize) = Profile.LinearFadeInSize;                                                    \
+		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, LinearFadeOutSize) = Profile.LinearFadeOutSize;                                                  \
 	}
 
 FPrecomputeContext CreatePrecomputeContext(

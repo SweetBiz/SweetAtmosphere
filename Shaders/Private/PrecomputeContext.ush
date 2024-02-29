@@ -6,6 +6,14 @@
 struct ParticleProfile
 {
 	/**
+	 * The phase function of this particle type.
+	 * 0: no phase function
+	 * 1: rayleigh phase function
+	 * TODO: mie scattering with asymmetry
+	 */
+	int PhaseFunction;
+
+	/**
 	 * The scattering coefficients for this particle type at maximum density.
 	 */
 	float3 ScatteringCoefficients;
@@ -33,12 +41,18 @@ struct ParticleProfile
 	Type PARTICLE_PROFILE_FIELD_NAME(ProfileIndex, Name);
 
 #define DEFINE_PARTICLE_PROFILE_PARAMETERS(Index)                            \
+	DEFINE_PARTICLE_PROFILE_PARAMETER(Index, int, PhaseFunction)             \
 	DEFINE_PARTICLE_PROFILE_PARAMETER(Index, float3, ScatteringCoefficients) \
-	DEFINE_PARTICLE_PROFILE_PARAMETER(Index, float, ExponentFactor)
+	DEFINE_PARTICLE_PROFILE_PARAMETER(Index, float, ExponentFactor)          \
+	DEFINE_PARTICLE_PROFILE_PARAMETER(Index, float, LinearFadeInSize)        \
+	DEFINE_PARTICLE_PROFILE_PARAMETER(Index, float, LinearFadeOutSize)
 
 #define LOAD_PARTICLE_PROFILE(Target, Index)                                                    \
+	Target.PhaseFunction = PARTICLE_PROFILE_FIELD_NAME(Index, PhaseFunction);                   \
 	Target.ScatteringCoefficients = PARTICLE_PROFILE_FIELD_NAME(Index, ScatteringCoefficients); \
-	Target.ExponentFactor = PARTICLE_PROFILE_FIELD_NAME(Index, ExponentFactor);
+	Target.ExponentFactor = PARTICLE_PROFILE_FIELD_NAME(Index, ExponentFactor);                 \
+	Target.LinearFadeInSize = PARTICLE_PROFILE_FIELD_NAME(Index, LinearFadeInSize);             \
+	Target.LinearFadeOutSize = PARTICLE_PROFILE_FIELD_NAME(Index, LinearFadeOutSize);
 
 struct PrecomputeContext
 {

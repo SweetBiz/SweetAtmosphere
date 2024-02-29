@@ -122,17 +122,15 @@ struct AtmosphereRenderer
 			RayEnd = min(RayEnd, PlanetEntry);
 		}
 
-		RayStart += RAY_EPSILON;
-		RayEnd -= RAY_EPSILON;
-
 		if (RayEnd < RayStart)
 		{
 			// the atmosphere is occluded
+			ColorOut = 1;
 			return;
 		}
 
 		// get in-scattered light along the view ray
-		const float3 RayStartPos = RayOrigin + RayStart * RayDir;
+		const float3 RayStartPos = RayOrigin + (RayStart + RAY_EPSILON) * RayDir;
 
 		if (RayEnd >= AtmosphereExit)
 		{
@@ -144,7 +142,7 @@ struct AtmosphereRenderer
 			const float SubtractionFactor = 1.2;
 
 			// the ray hits terrain before exiting the atmosphere.
-			const float3 RayEndPos = RayOrigin + RayEnd * RayDir;
+			const float3 RayEndPos = RayOrigin + (RayEnd - 2 * RAY_EPSILON) * RayDir;
 
 			// if we hit the planet before exiting the atmosphere, cast the ray in reverse.
 			// this yields better results than casting forward and subtracting what lies after the end.

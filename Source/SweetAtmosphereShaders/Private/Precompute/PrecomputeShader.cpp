@@ -209,6 +209,7 @@ struct FRHITextureData
 	const FBufferRHIRef Buffer;
 	const FIntVector Size;
 	const EPixelFormat PixelFormat;
+	const uint64 NumBytes;
 
 	static FRHITextureData Create2D(
 		FRHICommandList& RHICmdList,
@@ -233,7 +234,8 @@ struct FRHITextureData
 		return RHICmdList.CreateShaderResourceView(Buffer,
 			FRHIViewDesc::CreateBufferSRV()
 				.SetType(FRHIViewDesc::EBufferType::Typed)
-				.SetFormat(PixelFormat));
+				.SetFormat(PixelFormat)
+				.SetNumElements(Size.X * Size.Y * FMath::Max(Size.Z, 1)));
 	}
 
 	FUnorderedAccessViewRHIRef CreateUAV(FRHICommandList& RHICmdList) const
@@ -241,12 +243,13 @@ struct FRHITextureData
 		return RHICmdList.CreateUnorderedAccessView(Buffer,
 			FRHIViewDesc::CreateBufferUAV()
 				.SetType(FRHIViewDesc::EBufferType::Typed)
-				.SetFormat(PixelFormat));
+				.SetFormat(PixelFormat)
+				.SetNumElements(Size.X * Size.Y * FMath::Max(Size.Z, 1)));
 	}
 
 private:
-	FRHITextureData(const FBufferRHIRef& Buffer, const FIntVector& Size, EPixelFormat PixelFormat)
-		: Buffer(Buffer), Size(Size), PixelFormat(PixelFormat) {}
+	FRHITextureData(const FBufferRHIRef& Buffer, const FIntVector& Size, EPixelFormat PixelFormat, const uint32 NumBytes)
+		: Buffer(Buffer), Size(Size), PixelFormat(PixelFormat), NumBytes(NumBytes) {}
 
 	static FRHITextureData Create(FRHICommandList& RHICmdList,
 		const FIntVector& Size,
@@ -256,11 +259,12 @@ private:
 		const auto NumBytes = GPixelFormats[PixelFormat].Get3DImageSizeInBytes(Size.X, Size.Y, FMath::Max(1, Size.Z));
 
 		FRHIResourceCreateInfo BufferCreateInfo(*Name);
-		const auto Buffer = RHICmdList.CreateBuffer(NumBytes, EBufferUsageFlags::ByteAddressBuffer, 1,
-			ERHIAccess::SRVCompute | ERHIAccess::UAVCompute,
+		const auto Buffer = RHICmdList.CreateBuffer(NumBytes,
+			EBufferUsageFlags::ShaderResource | EBufferUsageFlags::UnorderedAccess, 1,
+			ERHIAccess::None,
 			BufferCreateInfo);
 
-		return FRHITextureData(Buffer, Size, PixelFormat);
+		return FRHITextureData(Buffer, Size, PixelFormat, NumBytes);
 	}
 };
 
@@ -271,8 +275,11 @@ struct FTextureDataReadback
 		const FRHITextureData& Resource, const int Pass, const FString& Name)
 	{
 		const auto NameIncludingPass = FString::Printf(TEXT("%d %s"), Pass, *Name);
+		const auto NumBytes = GPixelFormats[Resource.PixelFormat].Get3DImageSizeInBytes(
+			Resource.Size.X, Resource.Size.Y, Resource.Size.Z);
+
 		auto* Readback = new FRHIGPUBufferReadback(FName(NameIncludingPass + " Readback"));
-		Readback->EnqueueCopy(RHICmdList, Resource.Buffer);
+		Readback->EnqueueCopy(RHICmdList, Resource.Buffer, NumBytes);
 		return new FTextureDataReadback(NameIncludingPass, Resource.Size, Resource.PixelFormat, Readback);
 	}
 

@@ -26,8 +26,6 @@ RWBuffer<float4> InScatteredLightTextureOut;
 
 /**
  * The width, height, and depth of the in-scattered light texture.
- * Unused when 3D textures are supported, but the parameter
- * stays to keep a consistent memory layout across platforms.
  */
 int InScatteredLightTextureSize;
 

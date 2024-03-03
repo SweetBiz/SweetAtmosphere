@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "PrecomputeShaderSettings.h"
+#include "Engine/VolumeTexture.h"
 #include "PrecomputeShader.generated.h"
 
 /**
@@ -25,19 +26,6 @@ struct SWEETATMOSPHERESHADERS_API FAtmospherePrecomputedTextures
 	TObjectPtr<UVolumeTexture> InScatteredLightTexture;
 };
 
-struct SWEETATMOSPHERESHADERS_API FAtmospherePrecomputedTextureData
-{
-	/**
-	 * The transmittance texture data.
-	 */
-	TArray<uint8> TransmittanceTextureData;
-
-	/**
-	 * The in-scattered light texture data.
-	 */
-	TArray<uint8> InScatteredLightTextureData;
-};
-
 /**
  * Struct holding the intermediate textures at every step of atmosphere precomputation.
  */
@@ -53,12 +41,92 @@ struct SWEETATMOSPHERESHADERS_API FAtmospherePrecomputeDebugTextures
 	TMap<FString, TObjectPtr<UTexture>> DebugTextures;
 };
 
+struct SWEETATMOSPHERESHADERS_API FTextureData
+{
+	FIntVector Size;
+	EPixelFormat PixelFormat;
+	TArray<uint8> Data;
+
+	FTextureData() = default;
+
+	FTextureData(const FIntVector& Size, const EPixelFormat PixelFormat, const TArray<uint8>& Data)
+		: Size(Size), PixelFormat(PixelFormat), Data(Data) {}
+
+	bool IsVolumeTexture() const
+	{
+		return Size.Z > 0;
+	}
+
+	UTexture* CreateTexture() const
+	{
+		if (IsVolumeTexture())
+		{
+			return CreateTexture3D();
+		}
+		return CreateTexture2D();
+	}
+
+	UTexture2D* CreateTexture2D() const
+	{
+		check(!IsVolumeTexture());
+
+		auto* Texture = UTexture2D::CreateTransient(Size.X, Size.Y, PixelFormat);
+
+#if WITH_EDITORONLY_DATA
+		Texture->MipGenSettings = TMGS_NoMipmaps;
+#endif
+		Texture->NeverStream = true;
+		Texture->SRGB = 0;
+		Texture->LODGroup = TEXTUREGROUP_Pixels2D;
+
+		uint8* TargetData = static_cast<uint8*>(Texture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE));
+		FMemory::Memcpy(TargetData, Data.GetData(), Data.Num());
+		Texture->GetPlatformData()->Mips[0].BulkData.Unlock();
+
+		Texture->UpdateResource();
+		return Texture;
+	}
+
+	UVolumeTexture* CreateTexture3D() const
+	{
+		check(IsVolumeTexture());
+
+		auto* Texture = UVolumeTexture::CreateTransient(Size.X, Size.Y, Size.Z, PixelFormat);
+
+#if WITH_EDITORONLY_DATA
+		Texture->MipGenSettings = TMGS_NoMipmaps;
+#endif
+		Texture->NeverStream = true;
+		Texture->SRGB = 0;
+
+		uint8* TargetData = static_cast<uint8*>(Texture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE));
+		FMemory::Memcpy(TargetData, Data.GetData(), Data.Num());
+		Texture->GetPlatformData()->Mips[0].BulkData.Unlock();
+
+		Texture->UpdateResource();
+		return Texture;
+	}
+};
+
+struct SWEETATMOSPHERESHADERS_API FAtmospherePrecomputedTextureData
+{
+	/**
+	 * The transmittance texture data.
+	 */
+	FTextureData TransmittanceTextureData;
+
+	/**
+	 * The in-scattered light texture data.
+	 */
+	FTextureData InScatteredLightTextureData;
+};
+
 struct SWEETATMOSPHERESHADERS_API FAtmospherePrecomputedDebugTextureData
 {
 	/**
-	 * Mapping of debug texture name to its data and size.
+	 * Debug texture data by texture name.
 	 */
-	TMap<FString, TPair<TArray<uint8>, FIntVector>> DebugTextureData;
+	TMap<FString, FTextureData> DebugTextureData;
 };
 
 #define PARTICLE_PROFILE_PARAMETER(ProfileIndex, Type, Name) \

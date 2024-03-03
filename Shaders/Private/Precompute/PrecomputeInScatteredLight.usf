@@ -148,6 +148,6 @@ NUMTHREADS_3D void PrecomputeInScatteredLightCS(
 #endif
 
 	InScatteredLightTextureOut[id.z * InScatteredLightTextureSize * InScatteredLightTextureSize
-		+ id.x * InScatteredLightTextureSize
-		+ id.y] = float4(InScatteredLight.rgb, 1);
+		+ id.y * InScatteredLightTextureSize
+		+ id.x] = float4(InScatteredLight.rgb, 1);
 }

@@ -3,8 +3,6 @@
 #include "RHIGPUReadback.h"
 #include "RenderGraphUtils.h"
 
-#define SUPPORTS_3D_TEXTURES PLATFORM_WINDOWS
-
 #define PARTICLE_PROFILE_FIELD_NAME(ProfileIndex, Name) ParticleProfile_##ProfileIndex##_##Name
 
 #define PARTICLE_PROFILE_FIELD(ProfileIndex, Name) \
@@ -201,100 +199,128 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchGameThread(
 		});
 }
 
-struct FRHITextureResource
+/**
+ * Wrapper class to operate on float4 buffers instead of textures.
+ * This is required since macOS Metal doesn't seem to support 3D textures
+ * in a compute shader (or I'm too stupid to figure it out).
+ */
+struct FRHITextureData
 {
-	FBufferRHIRef Buffer;
-	FIntVector Size;
-	bool IsVolume;
+	const FBufferRHIRef Buffer;
+	const FIntVector Size;
+	const EPixelFormat PixelFormat;
 
-private:
-	FRHITextureResource() = default;
-
-public:
-	static FRHITextureResource Create2D(
+	static FRHITextureData Create2D(
 		FRHICommandList& RHICmdList,
 		const int Width, const int Height,
 		const EPixelFormat PixelFormat,
 		const FString& Name)
 	{
-		FRHITextureResource Res;
-
-		FRHIResourceCreateInfo BufferCreateInfo(*Name);
-		// TODO: calc size, or remove PixelFormat variable
-		Res.Buffer = RHICmdList.CreateBuffer(Width * Height * 2 * 4, EBufferUsageFlags::ByteAddressBuffer, 1, ERHIAccess::SRVCompute /* or none? */,
-			BufferCreateInfo);
-
-		Res.Size = FIntVector(Width, Height, 0);
-		Res.IsVolume = false;
-
-		return Res;
+		return Create(RHICmdList, FIntVector(Width, Height, 0), PixelFormat, Name);
 	}
 
-	static FRHITextureResource Create3D(FRHICommandList& RHICmdList,
+	static FRHITextureData Create3D(FRHICommandList& RHICmdList,
 		const FIntVector& Size,
 		const EPixelFormat PixelFormat,
 		const FString& Name)
 	{
 		check(Size.Z > 0);
+		return Create(RHICmdList, Size, PixelFormat, Name);
+	}
 
-		FRHITextureResource Res;
+	FShaderResourceViewRHIRef CreateSRV(FRHICommandList& RHICmdList) const
+	{
+		return RHICmdList.CreateShaderResourceView(Buffer,
+			FRHIViewDesc::CreateBufferSRV()
+				.SetType(FRHIViewDesc::EBufferType::Typed)
+				.SetFormat(PixelFormat));
+	}
+
+	FUnorderedAccessViewRHIRef CreateUAV(FRHICommandList& RHICmdList) const
+	{
+		return RHICmdList.CreateUnorderedAccessView(Buffer,
+			FRHIViewDesc::CreateBufferUAV()
+				.SetType(FRHIViewDesc::EBufferType::Typed)
+				.SetFormat(PixelFormat));
+	}
+
+private:
+	FRHITextureData(const FBufferRHIRef& Buffer, const FIntVector& Size, EPixelFormat PixelFormat)
+		: Buffer(Buffer), Size(Size), PixelFormat(PixelFormat) {}
+
+	static FRHITextureData Create(FRHICommandList& RHICmdList,
+		const FIntVector& Size,
+		const EPixelFormat PixelFormat,
+		const FString& Name)
+	{
+		const auto NumBytes = GPixelFormats[PixelFormat].Get3DImageSizeInBytes(Size.X, Size.Y, FMath::Max(1, Size.Z));
 
 		FRHIResourceCreateInfo BufferCreateInfo(*Name);
-		// TODO: calc size, or remove PixelFormat variable
-		Res.Buffer = RHICmdList.CreateBuffer(Size.X * Size.Y * Size.Z * 2 * 4, EBufferUsageFlags::ByteAddressBuffer, 1, ERHIAccess::SRVCompute /* or none? */,
+		const auto Buffer = RHICmdList.CreateBuffer(NumBytes, EBufferUsageFlags::ByteAddressBuffer, 1,
+			ERHIAccess::SRVCompute | ERHIAccess::UAVCompute,
 			BufferCreateInfo);
 
-		Res.Size = Size;
-		Res.IsVolume = true;
-
-		return Res;
+		return FRHITextureData(Buffer, Size, PixelFormat);
 	}
 };
 
-struct FTextureReadback
+struct FTextureDataReadback
 {
-	const FIntVector Size;
-	const FString Name;
-	FRHIGPUBufferReadback* Readback;
-
-	static FTextureReadback* Create(
+	static FTextureDataReadback* CreateAndEnqueue(
 		FRHICommandList& RHICmdList,
-		const FRHITextureResource& Resource, const int Pass, const FString& Name)
+		const FRHITextureData& Resource, const int Pass, const FString& Name)
 	{
 		const auto NameIncludingPass = FString::Printf(TEXT("%d %s"), Pass, *Name);
 		auto* Readback = new FRHIGPUBufferReadback(FName(NameIncludingPass + " Readback"));
 		Readback->EnqueueCopy(RHICmdList, Resource.Buffer);
-		return new FTextureReadback(Resource.Size, NameIncludingPass, Readback);
+		return new FTextureDataReadback(NameIncludingPass, Resource.Size, Resource.PixelFormat, Readback);
 	}
 
-	TArray<uint8> ReadToByteArray()
-	{
-		check(Readback->IsReady());
+	const FString Name;
+	FTextureData ReadTextureData;
 
-		const auto NumBytes = Size.X * Size.Y * FMath::Max(Size.Z, 1) * 2 * 4; // floats are packed into 16 bits
+	bool IsReady() const
+	{
+		return !ReadTextureData.Data.IsEmpty() || (Readback && Readback->IsReady());
+	}
+
+	FTextureData Read()
+	{
+		check(IsReady());
+		if (!ReadTextureData.Data.IsEmpty())
+		{
+			return ReadTextureData;
+		}
+
+		const auto NumBytes = GPixelFormats[ReadTextureData.PixelFormat].Get3DImageSizeInBytes(
+			ReadTextureData.Size.X, ReadTextureData.Size.Y, ReadTextureData.Size.Z);
+
 		uint8* GPUData = static_cast<uint8*>(Readback->Lock(NumBytes));
 
-		TArray<uint8> Data;
-		Data.SetNumUninitialized(NumBytes);
-
-		FMemory::Memcpy(Data.GetData(), GPUData, NumBytes);
+		ReadTextureData.Data.SetNumUninitialized(NumBytes);
+		FMemory::Memcpy(ReadTextureData.Data.GetData(), GPUData, NumBytes);
 
 		Readback->Unlock();
 		delete Readback;
 		Readback = nullptr;
 
-		return Data;
+		return ReadTextureData;
 	}
 
 private:
-	FTextureReadback(const FIntVector& Size, const FString& Name, FRHIGPUBufferReadback* const Readback)
-		: Size(Size), Name(Name), Readback(Readback) {}
+	/**
+	 * The underlying buffer readback.
+	 */
+	FRHIGPUBufferReadback* Readback;
+
+	FTextureDataReadback(const FString& Name, const FIntVector& Size, const EPixelFormat PixelFormat, FRHIGPUBufferReadback* const Readback)
+		: Name(Name), ReadTextureData(Size, PixelFormat, {}), Readback(Readback) {}
 };
 
-#define DEBUG_READBACK(Pass, Resource)                                                       \
-	if (GenerateDebugTextures)                                                               \
-	{                                                                                        \
-		DebugReadbacks.Add(FTextureReadback::Create(RHICmdList, Resource, Pass, #Resource)); \
+#define DEBUG_READBACK(Pass, Resource)                                                                     \
+	if (GenerateDebugTextures)                                                                             \
+	{                                                                                                      \
+		DebugReadbacks.Add(FTextureDataReadback::CreateAndEnqueue(RHICmdList, Resource, Pass, #Resource)); \
 	}
 
 #define PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, Name) \
@@ -332,17 +358,10 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 	TFunction<void(FAtmospherePrecomputedTextureData, FAtmospherePrecomputedDebugTextureData)> AsyncCallback)
 {
 	FAtmospherePrecomputeDebugTextures DebugTextures;
-	TArray<FTextureReadback*> DebugReadbacks;
+	TArray<FTextureDataReadback*> DebugReadbacks;
 
-	FTextureReadback* TransmittanceReadback;
-	FTextureReadback* InScatteredLightReadback;
-
-#if SUPPORTS_3D_TEXTURES
-	const int InScatteredLightTextureSize = TextureSettings.InScatteredLightTextureSize;
-#else
-	// hard limit on macOS for texture height is 128^2
-	const int InScatteredLightTextureSize = FMath::Min(128, TextureSettings.InScatteredLightTextureSize);
-#endif
+	FTextureDataReadback* TransmittanceReadback;
+	FTextureDataReadback* InScatteredLightReadback;
 
 	constexpr auto PixelFormat4 = PF_FloatRGBA;
 	{
@@ -353,15 +372,15 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 		// initialize all textures
 
 		/// output textures
-		const auto Transmittance = FRHITextureResource::Create2D(
+		const auto Transmittance = FRHITextureData::Create2D(
 			RHICmdList,
 			TextureSettings.TransmittanceTextureWidth, TextureSettings.TransmittanceTextureHeight,
 			PixelFormat4,
 			TEXT("Transmittance Texture"));
 
-		const auto InScatteredLight = FRHITextureResource::Create3D(
+		const auto InScatteredLight = FRHITextureData::Create3D(
 			RHICmdList,
-			FIntVector(InScatteredLightTextureSize),
+			FIntVector(TextureSettings.InScatteredLightTextureSize),
 			PixelFormat4,
 			TEXT("In-Scattered Light Texture"));
 
@@ -378,14 +397,10 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 				FIntVector(TextureSettings.TransmittanceTextureWidth, TextureSettings.TransmittanceTextureHeight, 1),
 				FComputeShaderUtils::kGolden2DGroupSize);
 
-			// TODO: move this function to the resource class
-			const auto TransmittanceUAV = RHICmdList.CreateUnorderedAccessView(
-				Transmittance.Buffer, FRHIViewDesc::CreateBufferUAV().SetType(FRHIViewDesc::EBufferType::Typed).SetFormat(PixelFormat4));
-
 			SetComputePipelineState(RHICmdList, Shader.GetComputeShader());
 
 			SetShaderParametersLegacyCS(RHICmdList, Shader,
-				TransmittanceUAV, Transmittance.Size.X, Transmittance.Size.Y,
+				Transmittance.CreateUAV(RHICmdList), Transmittance.Size.X, Transmittance.Size.Y,
 				TextureSettings.TransmittanceSampleSteps, Ctx);
 
 			RHICmdList.DispatchComputeShader(GroupCount.X, GroupCount.Y, GroupCount.Z);
@@ -405,19 +420,14 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 			}
 
 			const FIntVector GroupCount = FComputeShaderUtils::GetGroupCount(
-				FIntVector(InScatteredLightTextureSize),
+				FIntVector(TextureSettings.InScatteredLightTextureSize),
 				FComputeShaderUtils::kGolden2DGroupSize);
-
-			const auto TransmittanceSRV = RHICmdList.CreateShaderResourceView(
-				Transmittance.Buffer);
-			const auto InScatteredLightUAV = RHICmdList.CreateUnorderedAccessView(
-				InScatteredLight.Buffer, FRHIViewDesc::CreateBufferUAV().SetType(FRHIViewDesc::EBufferType::Typed).SetFormat(PixelFormat4));
 
 			SetComputePipelineState(RHICmdList, Shader.GetComputeShader());
 
 			SetShaderParametersLegacyCS(RHICmdList, Shader,
-				TransmittanceSRV, Transmittance.Size.X, Transmittance.Size.Y,
-				InScatteredLightUAV, InScatteredLightTextureSize,
+				Transmittance.CreateSRV(RHICmdList), Transmittance.Size.X, Transmittance.Size.Y,
+				InScatteredLight.CreateUAV(RHICmdList), TextureSettings.InScatteredLightTextureSize,
 				TextureSettings.InScatteredLightSampleSteps,
 				Ctx);
 
@@ -429,19 +439,19 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 		}
 
 		// texture readback
-		TransmittanceReadback = FTextureReadback::Create(RHICmdList, Transmittance, 0, "Transmittance");
-		InScatteredLightReadback = FTextureReadback::Create(RHICmdList, InScatteredLight, 0, "In-Scattered Light");
+		TransmittanceReadback = FTextureDataReadback::CreateAndEnqueue(RHICmdList, Transmittance, 0, "Transmittance");
+		InScatteredLightReadback = FTextureDataReadback::CreateAndEnqueue(RHICmdList, InScatteredLight, 0, "In-Scattered Light");
 	}
 
 	// create a lambda that schedules itself to wait without blocking the render thread
 	// until buffer readbacks can be performed
 	auto RunnerFunc = [TransmittanceReadback, InScatteredLightReadback, DebugReadbacks, AsyncCallback](auto&& RunnerFunc) -> void {
-		bool AllReady = TransmittanceReadback->Readback->IsReady() && InScatteredLightReadback->Readback->IsReady();
+		bool AllReady = TransmittanceReadback->IsReady() && InScatteredLightReadback->IsReady();
 		if (AllReady)
 		{
 			for (const auto* DebugReadback : DebugReadbacks)
 			{
-				if (!DebugReadback->Readback->IsReady())
+				if (!DebugReadback->IsReady())
 				{
 					AllReady = false;
 					break;
@@ -452,24 +462,23 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 		if (AllReady)
 		{
 			FAtmospherePrecomputedTextureData TextureData;
-			TextureData.TransmittanceTextureData = TransmittanceReadback->ReadToByteArray();
-			TextureData.InScatteredLightTextureData = InScatteredLightReadback->ReadToByteArray();
+			TextureData.TransmittanceTextureData = TransmittanceReadback->Read();
+			TextureData.InScatteredLightTextureData = InScatteredLightReadback->Read();
+
+			delete TransmittanceReadback;
+			delete InScatteredLightReadback;
 
 			FAtmospherePrecomputedDebugTextureData DebugTextureData;
 			for (auto* DebugReadback : DebugReadbacks)
 			{
 				DebugTextureData.DebugTextureData.Add(
-					DebugReadback->Name,
-					TTuple<TArray<uint8>, FIntVector>(DebugReadback->ReadToByteArray(), DebugReadback->Size));
+					DebugReadback->Name, DebugReadback->Read());
 				delete DebugReadback;
 			}
 
 			AsyncTask(ENamedThreads::GameThread, [AsyncCallback, TextureData, DebugTextureData] {
 				AsyncCallback(TextureData, DebugTextureData);
 			});
-
-			delete TransmittanceReadback;
-			delete InScatteredLightReadback;
 
 			return;
 		}

@@ -35,8 +35,8 @@ float3 GetTransmittance(
 	const float2 uv = float2(RayOriginHeight01, y);
 
 	// TOOD: trilinear filtering
-	const uint2 UV = uint2(round(uv)) * TransmittanceTextureSize;
-	return TransmittanceTextureBuffer[UV.x * TransmittanceTextureSize.x + UV.y].rgb;
+	const uint2 UV = floor(uv * TransmittanceTextureSize);
+	return TransmittanceTextureBuffer[UV.y * TransmittanceTextureSize.x + UV.x].rgb;
 
 	/*
 #if SUPPORTS_INDEPENDENT_SAMPLERS

@@ -57,5 +57,5 @@ NUMTHREADS_2D void PrecomputeTransmittanceCS(
 	const float3 Transmittance = ComputeTransmittance(Ctx,
 		RayOrigin + RayStart * RayDir, RayDir,
 		RayEnd - RayStart, NumSteps);
-	TransmittanceTextureOut[id.x * TransmittanceTextureWidth + id.y] = float4(Transmittance, 1);
+	TransmittanceTextureOut[id.y * TransmittanceTextureWidth + id.x] = float4(Transmittance, 1);
 }

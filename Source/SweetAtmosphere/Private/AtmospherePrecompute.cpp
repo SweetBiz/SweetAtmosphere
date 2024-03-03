@@ -75,18 +75,14 @@ inline UVolumeTexture* CreateTexture3D(const TArray<uint8>& Data, int Width, int
 	return Texture;
 }
 
-#define CREATE_TEXTURES_FROM_DATA()                                                                                                                                                                                                     \
-	FAtmospherePrecomputedTextures Textures;                                                                                                                                                                                            \
-	Textures.TransmittanceTexture = CreateTexture2D(TextureData.TransmittanceTextureData, TextureSettings.TransmittanceTextureWidth, TextureSettings.TransmittanceTextureHeight);                                                       \
-	Textures.InScatteredLightTexture = CreateTexture3D(TextureData.InScatteredLightTextureData, TextureSettings.InScatteredLightTextureSize, TextureSettings.InScatteredLightTextureSize, TextureSettings.InScatteredLightTextureSize); \
-	FAtmospherePrecomputeDebugTextures DebugTextures;                                                                                                                                                                                   \
-	for (const auto& [Name, Entry] : DebugTextureData.DebugTextureData)                                                                                                                                                                 \
-	{                                                                                                                                                                                                                                   \
-		const auto& [Data, Size] = Entry;                                                                                                                                                                                               \
-		DebugTextures.DebugTextures.Add(Name,                                                                                                                                                                                           \
-			Size.Z > 0                                                                                                                                                                                                                  \
-				? static_cast<UTexture*>(CreateTexture3D(Data, Size.X, Size.Y, Size.Z))                                                                                                                                                 \
-				: static_cast<UTexture*>(CreateTexture2D(Data, Size.X, Size.Y)));                                                                                                                                                       \
+#define CREATE_TEXTURES_FROM_DATA()                                                               \
+	FAtmospherePrecomputedTextures Textures;                                                      \
+	Textures.TransmittanceTexture = TextureData.TransmittanceTextureData.CreateTexture2D();       \
+	Textures.InScatteredLightTexture = TextureData.InScatteredLightTextureData.CreateTexture3D(); \
+	FAtmospherePrecomputeDebugTextures DebugTextures;                                             \
+	for (const auto& [Name, Data] : DebugTextureData.DebugTextureData)                            \
+	{                                                                                             \
+		DebugTextures.DebugTextures.Add(Name, Data.CreateTexture());                              \
 	}
 
 void UAtmospherePrecomputeAction::PrecomputeAtmosphericScattering(

@@ -1,22 +1,115 @@
 #include "Precompute/PrecomputeShader.h"
 
 #include "RHIGPUReadback.h"
-#include "RenderGraphBuilder.h"
 #include "RenderGraphUtils.h"
 
-#define SUPPORTS_3D_TEXTURES 0 // PLATFORM_WINDOWS
+#define SUPPORTS_3D_TEXTURES PLATFORM_WINDOWS
+
+#define PARTICLE_PROFILE_FIELD_NAME(ProfileIndex, Name) ParticleProfile_##ProfileIndex##_##Name
+
+#define PARTICLE_PROFILE_FIELD(ProfileIndex, Name) \
+	LAYOUT_FIELD(FShaderParameter, PARTICLE_PROFILE_FIELD_NAME(ProfileIndex, Name))
+
+#define PARTICLE_PROFILE_FIELDS(Index)                     \
+	PARTICLE_PROFILE_FIELD(Index, ScatteringCoefficientsR) \
+	PARTICLE_PROFILE_FIELD(Index, ScatteringCoefficientsG) \
+	PARTICLE_PROFILE_FIELD(Index, ScatteringCoefficientsB) \
+	PARTICLE_PROFILE_FIELD(Index, PhaseFunction)           \
+	PARTICLE_PROFILE_FIELD(Index, ExponentFactor)          \
+	PARTICLE_PROFILE_FIELD(Index, LinearFadeInSize)        \
+	PARTICLE_PROFILE_FIELD(Index, LinearFadeOutSize)
+
+#define DEFINE_PRECOMPUTE_CONTEXT_FIELDS()                          \
+	LAYOUT_FIELD(FShaderParameter, AtmosphereScale)		/* float */ \
+	LAYOUT_FIELD(FShaderParameter, NumParticleProfiles) /* int */   \
+	PARTICLE_PROFILE_FIELDS(0)                                      \
+	PARTICLE_PROFILE_FIELDS(1)                                      \
+	PARTICLE_PROFILE_FIELDS(2)                                      \
+	PARTICLE_PROFILE_FIELDS(3)                                      \
+	PARTICLE_PROFILE_FIELDS(4)
+
+#define __STRINGIFY(s) #s
+#define STRINGIFY(s) __STRINGIFY(s)
+
+#define BIND_PARTICLE_PROFILE_FIELD(ProfileIndex, Name) \
+	PARTICLE_PROFILE_FIELD_NAME(ProfileIndex, Name).Bind(Initializer.ParameterMap, TEXT(STRINGIFY(PARTICLE_PROFILE_FIELD_NAME(ProfileIndex, Name))));
+
+#define BIND_PARTICLE_PROFILE_FIELDS(Index)                     \
+	BIND_PARTICLE_PROFILE_FIELD(Index, ScatteringCoefficientsR) \
+	BIND_PARTICLE_PROFILE_FIELD(Index, ScatteringCoefficientsG) \
+	BIND_PARTICLE_PROFILE_FIELD(Index, ScatteringCoefficientsB) \
+	BIND_PARTICLE_PROFILE_FIELD(Index, PhaseFunction)           \
+	BIND_PARTICLE_PROFILE_FIELD(Index, ExponentFactor)          \
+	BIND_PARTICLE_PROFILE_FIELD(Index, LinearFadeInSize)        \
+	BIND_PARTICLE_PROFILE_FIELD(Index, LinearFadeOutSize)
+
+#define BIND_PRECOMPUTE_CONTEXT_FIELDS(Index)                                        \
+	AtmosphereScale.Bind(Initializer.ParameterMap, TEXT("AtmosphereScale"));         \
+	NumParticleProfiles.Bind(Initializer.ParameterMap, TEXT("NumParticleProfiles")); \
+	BIND_PARTICLE_PROFILE_FIELDS(0)                                                  \
+	BIND_PARTICLE_PROFILE_FIELDS(1)                                                  \
+	BIND_PARTICLE_PROFILE_FIELDS(2)                                                  \
+	BIND_PARTICLE_PROFILE_FIELDS(3)                                                  \
+	BIND_PARTICLE_PROFILE_FIELDS(4)
+
+#define SET_PARTICLE_PROFILE_FIELD(ProfileIndex, Name) \
+	SetShaderValue(BatchedParameters, PARTICLE_PROFILE_FIELD_NAME(ProfileIndex, Name), Ctx.PARTICLE_PROFILE_FIELD_NAME(ProfileIndex, Name));
+
+#define SET_PARTICLE_PROFILE_FIELDS(Index)                     \
+	SET_PARTICLE_PROFILE_FIELD(Index, ScatteringCoefficientsR) \
+	SET_PARTICLE_PROFILE_FIELD(Index, ScatteringCoefficientsG) \
+	SET_PARTICLE_PROFILE_FIELD(Index, ScatteringCoefficientsB) \
+	SET_PARTICLE_PROFILE_FIELD(Index, PhaseFunction)           \
+	SET_PARTICLE_PROFILE_FIELD(Index, ExponentFactor)          \
+	SET_PARTICLE_PROFILE_FIELD(Index, LinearFadeInSize)        \
+	SET_PARTICLE_PROFILE_FIELD(Index, LinearFadeOutSize)
+
+#define SET_PRECOMPUTE_CONTEXT_FIELDS()                                              \
+	SetShaderValue(BatchedParameters, AtmosphereScale, Ctx.AtmosphereScale);         \
+	SetShaderValue(BatchedParameters, NumParticleProfiles, Ctx.NumParticleProfiles); \
+	SET_PARTICLE_PROFILE_FIELDS(0)                                                   \
+	SET_PARTICLE_PROFILE_FIELDS(1)                                                   \
+	SET_PARTICLE_PROFILE_FIELDS(2)                                                   \
+	SET_PARTICLE_PROFILE_FIELDS(3)                                                   \
+	SET_PARTICLE_PROFILE_FIELDS(4)
 
 class FTransmittancePrecomputeCS : public FGlobalShader
 {
-public:
 	DECLARE_SHADER_TYPE(FTransmittancePrecomputeCS, Global);
-	SHADER_USE_PARAMETER_STRUCT(FTransmittancePrecomputeCS, FGlobalShader);
-	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-	// texture bindings
-	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D, TransmittanceTextureOut)
-	DEFINE_PRECOMPUTE_CONTEXT_PARAMETERS()
-	SHADER_PARAMETER(int, NumSteps)
-	END_SHADER_PARAMETER_STRUCT()
+
+	LAYOUT_FIELD(FShaderResourceParameter, TransmittanceTextureOut); // RWBuffer<float4>
+	LAYOUT_FIELD(FShaderParameter, TransmittanceTextureWidth);		 // int
+	LAYOUT_FIELD(FShaderParameter, TransmittanceTextureHeight);		 // int
+	LAYOUT_FIELD(FShaderParameter, NumSteps);						 // int
+
+	DEFINE_PRECOMPUTE_CONTEXT_FIELDS()
+
+	/** Default constructor. */
+	FTransmittancePrecomputeCS() {}
+
+	/** Initialization constructor. */
+	FTransmittancePrecomputeCS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
+		: FGlobalShader(Initializer)
+	{
+		TransmittanceTextureOut.Bind(Initializer.ParameterMap, TEXT("TransmittanceTextureOut"));
+		TransmittanceTextureWidth.Bind(Initializer.ParameterMap, TEXT("TransmittanceTextureWidth"));
+		TransmittanceTextureHeight.Bind(Initializer.ParameterMap, TEXT("TransmittanceTextureHeight"));
+		NumSteps.Bind(Initializer.ParameterMap, TEXT("NumSteps"));
+		BIND_PRECOMPUTE_CONTEXT_FIELDS();
+	}
+
+	void SetParameters(FRHIBatchedShaderParameters& BatchedParameters,
+		FRHIUnorderedAccessView* _TransmittanceTextureOut,
+		int _TransmittanceTextureWidth, int _TransmittanceTextureHeight,
+		int _NumSteps,
+		const FPrecomputeContext& Ctx) const
+	{
+		SetUAVParameter(BatchedParameters, TransmittanceTextureOut, _TransmittanceTextureOut);
+		SetShaderValue(BatchedParameters, TransmittanceTextureWidth, _TransmittanceTextureWidth);
+		SetShaderValue(BatchedParameters, TransmittanceTextureHeight, _TransmittanceTextureHeight);
+		SetShaderValue(BatchedParameters, NumSteps, _NumSteps);
+		SET_PRECOMPUTE_CONTEXT_FIELDS();
+	}
 };
 
 IMPLEMENT_SHADER_TYPE(,
@@ -27,22 +120,49 @@ IMPLEMENT_SHADER_TYPE(,
 
 class FInScatteredLightPrecomputeCS : public FGlobalShader
 {
-public:
 	DECLARE_SHADER_TYPE(FInScatteredLightPrecomputeCS, Global);
-	SHADER_USE_PARAMETER_STRUCT(FInScatteredLightPrecomputeCS, FGlobalShader);
 
-	BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
-	//  texture bindings
-	SHADER_PARAMETER_RDG_TEXTURE_SRV(Texture2D, TransmittanceTextureIn)
-#if SUPPORTS_3D_TEXTURES
-	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture3D, InScatteredLightTextureOut)
-#else
-	SHADER_PARAMETER_RDG_TEXTURE_UAV(RWTexture2D<float4>, InScatteredLightTextureOut)
-	SHADER_PARAMETER(int, InScatteredLightTextureSize)
-#endif
-	SHADER_PARAMETER(int, NumSteps)
-	//DEFINE_PRECOMPUTE_CONTEXT_PARAMETERS()å
-	END_SHADER_PARAMETER_STRUCT()
+	LAYOUT_FIELD(FShaderResourceParameter, TransmittanceTextureIn);		// Buffer<float4>
+	LAYOUT_FIELD(FShaderParameter, TransmittanceTextureWidth);			// int
+	LAYOUT_FIELD(FShaderParameter, TransmittanceTextureHeight);			// int
+	LAYOUT_FIELD(FShaderResourceParameter, InScatteredLightTextureOut); // RWBuffer<float4>
+	LAYOUT_FIELD(FShaderParameter, InScatteredLightTextureSize);		// int
+	LAYOUT_FIELD(FShaderParameter, NumSteps);							// int
+
+	DEFINE_PRECOMPUTE_CONTEXT_FIELDS()
+
+	/** Default constructor. */
+	FInScatteredLightPrecomputeCS() {}
+
+	/** Initialization constructor. */
+	FInScatteredLightPrecomputeCS(const ShaderMetaType::CompiledShaderInitializerType& Initializer)
+		: FGlobalShader(Initializer)
+	{
+		TransmittanceTextureIn.Bind(Initializer.ParameterMap, TEXT("TransmittanceTextureIn"));
+		TransmittanceTextureWidth.Bind(Initializer.ParameterMap, TEXT("TransmittanceTextureWidth"));
+		TransmittanceTextureHeight.Bind(Initializer.ParameterMap, TEXT("TransmittanceTextureHeight"));
+		InScatteredLightTextureOut.Bind(Initializer.ParameterMap, TEXT("InScatteredLightTextureOut"));
+		InScatteredLightTextureSize.Bind(Initializer.ParameterMap, TEXT("InScatteredLightTextureSize"));
+		NumSteps.Bind(Initializer.ParameterMap, TEXT("NumSteps"));
+		BIND_PRECOMPUTE_CONTEXT_FIELDS();
+	}
+
+	void SetParameters(FRHIBatchedShaderParameters& BatchedParameters,
+		FRHIShaderResourceView* _TransmittanceTextureIn,
+		int _TransmittanceTextureWidth, int _TransmittanceTextureHeight,
+		FRHIUnorderedAccessView* _InScatteredLightTextureOut,
+		int _InScatteredLightTextureSize,
+		int _NumSteps,
+		const FPrecomputeContext& Ctx) const
+	{
+		SetSRVParameter(BatchedParameters, TransmittanceTextureIn, _TransmittanceTextureIn);
+		SetShaderValue(BatchedParameters, TransmittanceTextureWidth, _TransmittanceTextureWidth);
+		SetShaderValue(BatchedParameters, TransmittanceTextureHeight, _TransmittanceTextureHeight);
+		SetUAVParameter(BatchedParameters, InScatteredLightTextureOut, _InScatteredLightTextureOut);
+		SetShaderValue(BatchedParameters, InScatteredLightTextureSize, _InScatteredLightTextureSize);
+		SetShaderValue(BatchedParameters, NumSteps, _NumSteps);
+		SET_PRECOMPUTE_CONTEXT_FIELDS();
+	}
 };
 
 IMPLEMENT_SHADER_TYPE(,
@@ -81,26 +201,28 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchGameThread(
 		});
 }
 
-struct FRDGTextureResource
+struct FRHITextureResource
 {
-	FRDGTextureRef RDG;
-	FRDGTextureUAVRef UAV;
-	FRDGTextureSRVRef SRV;
+	FBufferRHIRef Buffer;
 	FIntVector Size;
 	bool IsVolume;
 
 private:
-	FRDGTextureResource() = default;
+	FRHITextureResource() = default;
 
 public:
-	static FRDGTextureResource Create2D(FRDGBuilder& GraphBuilder, const int Width, const int Height, const EPixelFormat PixelFormat, const FString& Name)
+	static FRHITextureResource Create2D(
+		FRHICommandList& RHICmdList,
+		const int Width, const int Height,
+		const EPixelFormat PixelFormat,
+		const FString& Name)
 	{
-		FRDGTextureResource Res;
-		Res.RDG = GraphBuilder.CreateTexture(
-			FRDGTextureDesc::Create2D(FIntPoint(Width, Height), PixelFormat, FClearValueBinding::BlackMaxAlpha, TexCreate_UAV | TexCreate_ShaderResource),
-			*Name);
-		Res.UAV = GraphBuilder.CreateUAV(Res.RDG);
-		Res.SRV = GraphBuilder.CreateSRV(Res.RDG);
+		FRHITextureResource Res;
+
+		FRHIResourceCreateInfo BufferCreateInfo(*Name);
+		// TODO: calc size, or remove PixelFormat variable
+		Res.Buffer = RHICmdList.CreateBuffer(Width * Height * 2 * 4, EBufferUsageFlags::ByteAddressBuffer, 1, ERHIAccess::SRVCompute /* or none? */,
+			BufferCreateInfo);
 
 		Res.Size = FIntVector(Width, Height, 0);
 		Res.IsVolume = false;
@@ -108,29 +230,19 @@ public:
 		return Res;
 	}
 
-	static FRDGTextureResource Create3D(FRDGBuilder& GraphBuilder, const FIntVector& Size, const EPixelFormat PixelFormat, const FString& Name)
+	static FRHITextureResource Create3D(FRHICommandList& RHICmdList,
+		const FIntVector& Size,
+		const EPixelFormat PixelFormat,
+		const FString& Name)
 	{
 		check(Size.Z > 0);
 
-		FRDGTextureResource Res;
-#if SUPPORTS_3D_TEXTURES
-		Res.RDG = GraphBuilder.CreateTexture(
-			FRDGTextureDesc::Create3D(
-				Size, PixelFormat,
-				FClearValueBinding::BlackMaxAlpha,
-				TexCreate_UAV | TexCreate_ShaderResource),
-			*Name);
-#else
-		Res.RDG = GraphBuilder.CreateTexture(
-			FRDGTextureDesc::Create2D(
-				FIntPoint(Size.X, Size.Y * Size.Z),
-				PixelFormat,
-				FClearValueBinding::BlackMaxAlpha,
-				TexCreate_UAV | TexCreate_ShaderResource),
-			*Name);
-#endif
-		Res.UAV = GraphBuilder.CreateUAV(Res.RDG);
-		Res.SRV = GraphBuilder.CreateSRV(Res.RDG);
+		FRHITextureResource Res;
+
+		FRHIResourceCreateInfo BufferCreateInfo(*Name);
+		// TODO: calc size, or remove PixelFormat variable
+		Res.Buffer = RHICmdList.CreateBuffer(Size.X * Size.Y * Size.Z * 2 * 4, EBufferUsageFlags::ByteAddressBuffer, 1, ERHIAccess::SRVCompute /* or none? */,
+			BufferCreateInfo);
 
 		Res.Size = Size;
 		Res.IsVolume = true;
@@ -143,13 +255,15 @@ struct FTextureReadback
 {
 	const FIntVector Size;
 	const FString Name;
-	FRHIGPUTextureReadback* Readback;
+	FRHIGPUBufferReadback* Readback;
 
-	static FTextureReadback* Create(FRDGBuilder& GraphBuilder, const FRDGTextureResource& Resource, const int Pass, const FString& Name)
+	static FTextureReadback* Create(
+		FRHICommandList& RHICmdList,
+		const FRHITextureResource& Resource, const int Pass, const FString& Name)
 	{
 		const auto NameIncludingPass = FString::Printf(TEXT("%d %s"), Pass, *Name);
-		auto* Readback = new FRHIGPUTextureReadback(FName(NameIncludingPass + " Readback"));
-		AddEnqueueCopyPass(GraphBuilder, Readback, Resource.RDG);
+		auto* Readback = new FRHIGPUBufferReadback(FName(NameIncludingPass + " Readback"));
+		Readback->EnqueueCopy(RHICmdList, Resource.Buffer);
 		return new FTextureReadback(Resource.Size, NameIncludingPass, Readback);
 	}
 
@@ -157,10 +271,9 @@ struct FTextureReadback
 	{
 		check(Readback->IsReady());
 
-		int32 Width, Height;
-		uint8* GPUData = static_cast<uint8*>(Readback->Lock(Width, &Height));
-
 		const auto NumBytes = Size.X * Size.Y * FMath::Max(Size.Z, 1) * 2 * 4; // floats are packed into 16 bits
+		uint8* GPUData = static_cast<uint8*>(Readback->Lock(NumBytes));
+
 		TArray<uint8> Data;
 		Data.SetNumUninitialized(NumBytes);
 
@@ -174,14 +287,14 @@ struct FTextureReadback
 	}
 
 private:
-	FTextureReadback(const FIntVector& Size, const FString& Name, FRHIGPUTextureReadback* const Readback)
+	FTextureReadback(const FIntVector& Size, const FString& Name, FRHIGPUBufferReadback* const Readback)
 		: Size(Size), Name(Name), Readback(Readback) {}
 };
 
-#define DEBUG_READBACK(Pass, Resource)                                                         \
-	if (GenerateDebugTextures)                                                                 \
-	{                                                                                          \
-		DebugReadbacks.Add(FTextureReadback::Create(GraphBuilder, Resource, Pass, #Resource)); \
+#define DEBUG_READBACK(Pass, Resource)                                                       \
+	if (GenerateDebugTextures)                                                               \
+	{                                                                                        \
+		DebugReadbacks.Add(FTextureReadback::Create(RHICmdList, Resource, Pass, #Resource)); \
 	}
 
 #define PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, Name) \
@@ -219,9 +332,6 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 	TFunction<void(FAtmospherePrecomputedTextureData, FAtmospherePrecomputedDebugTextureData)> AsyncCallback)
 {
 	FAtmospherePrecomputeDebugTextures DebugTextures;
-
-	FRDGBuilder GraphBuilder(RHICmdList);
-
 	TArray<FTextureReadback*> DebugReadbacks;
 
 	FTextureReadback* TransmittanceReadback;
@@ -230,7 +340,7 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 #if SUPPORTS_3D_TEXTURES
 	const int InScatteredLightTextureSize = TextureSettings.InScatteredLightTextureSize;
 #else
-	// hard limit on macOS for texture height
+	// hard limit on macOS for texture height is 128^2
 	const int InScatteredLightTextureSize = FMath::Min(128, TextureSettings.InScatteredLightTextureSize);
 #endif
 
@@ -238,20 +348,19 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 	{
 		DECLARE_GPU_STAT(AtmospherePrecompute);
 		SCOPE_CYCLE_COUNTER(STAT_AtmospherePrecompute_Execute);
-		RDG_EVENT_SCOPE(GraphBuilder, "Atmosphere Precompute Graph");
-		RDG_GPU_STAT_SCOPE(GraphBuilder, AtmospherePrecompute);
+		SCOPED_DRAW_EVENT(RHICmdList, AtmospherePrecompute);
 
 		// initialize all textures
 
 		/// output textures
-		const auto Transmittance = FRDGTextureResource::Create2D(
-			GraphBuilder,
+		const auto Transmittance = FRHITextureResource::Create2D(
+			RHICmdList,
 			TextureSettings.TransmittanceTextureWidth, TextureSettings.TransmittanceTextureHeight,
 			PixelFormat4,
 			TEXT("Transmittance Texture"));
 
-		const auto InScatteredLight = FRDGTextureResource::Create3D(
-			GraphBuilder,
+		const auto InScatteredLight = FRHITextureResource::Create3D(
+			RHICmdList,
 			FIntVector(InScatteredLightTextureSize),
 			PixelFormat4,
 			TEXT("In-Scattered Light Texture"));
@@ -265,18 +374,23 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 				return;
 			}
 
-			auto* PassParams = GraphBuilder.AllocParameters<FTransmittancePrecomputeCS::FParameters>();
-			APPLY_PRECOMPUTE_CONTEXT()
-			PassParams->NumSteps = TextureSettings.TransmittanceSampleSteps;
-			PassParams->TransmittanceTextureOut = GraphBuilder.CreateUAV(Transmittance.RDG);
-
 			const FIntVector GroupCount = FComputeShaderUtils::GetGroupCount(
 				FIntVector(TextureSettings.TransmittanceTextureWidth, TextureSettings.TransmittanceTextureHeight, 1),
 				FComputeShaderUtils::kGolden2DGroupSize);
 
-			FComputeShaderUtils::AddPass(GraphBuilder,
-				RDG_EVENT_NAME("Precompute Transmittance"),
-				Shader, PassParams, GroupCount);
+			// TODO: move this function to the resource class
+			const auto TransmittanceUAV = RHICmdList.CreateUnorderedAccessView(
+				Transmittance.Buffer, FRHIViewDesc::CreateBufferUAV().SetType(FRHIViewDesc::EBufferType::Typed).SetFormat(PixelFormat4));
+
+			SetComputePipelineState(RHICmdList, Shader.GetComputeShader());
+
+			SetShaderParametersLegacyCS(RHICmdList, Shader,
+				TransmittanceUAV, Transmittance.Size.X, Transmittance.Size.Y,
+				TextureSettings.TransmittanceSampleSteps, Ctx);
+
+			RHICmdList.DispatchComputeShader(GroupCount.X, GroupCount.Y, GroupCount.Z);
+
+			UnsetShaderUAVs(RHICmdList, Shader, Shader.GetComputeShader());
 
 			DEBUG_READBACK(1, Transmittance)
 		}
@@ -290,33 +404,37 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 				return;
 			}
 
-			auto* PassParams = GraphBuilder.AllocParameters<FInScatteredLightPrecomputeCS::FParameters>();
-			// APPLY_PRECOMPUTE_CONTEXT()
-			PassParams->NumSteps = TextureSettings.InScatteredLightSampleSteps;
-			PassParams->TransmittanceTextureIn = GraphBuilder.CreateSRV(Transmittance.RDG);
-#if SUPPORTS_3D_TEXTURES
-			PassParams->InScatteredLightTextureOut = GraphBuilder.CreateUAV(InScatteredLight.RDG);
-#else
-			PassParams->InScatteredLightTextureSize = InScatteredLightTextureSize;
-			PassParams->InScatteredLightTextureOut = GraphBuilder.CreateUAV(InScatteredLight.RDG);
-#endif
-
 			const FIntVector GroupCount = FComputeShaderUtils::GetGroupCount(
 				FIntVector(InScatteredLightTextureSize),
 				FComputeShaderUtils::kGolden2DGroupSize);
 
-			FComputeShaderUtils::AddPass(GraphBuilder,
-				RDG_EVENT_NAME("Precompute In-Scattered Light"),
-				Shader, PassParams, GroupCount);
+			const auto TransmittanceSRV = RHICmdList.CreateShaderResourceView(
+				Transmittance.Buffer);
+			const auto InScatteredLightUAV = RHICmdList.CreateUnorderedAccessView(
+				InScatteredLight.Buffer, FRHIViewDesc::CreateBufferUAV().SetType(FRHIViewDesc::EBufferType::Typed).SetFormat(PixelFormat4));
+
+			SetComputePipelineState(RHICmdList, Shader.GetComputeShader());
+
+			SetShaderParametersLegacyCS(RHICmdList, Shader,
+				TransmittanceSRV, Transmittance.Size.X, Transmittance.Size.Y,
+				InScatteredLightUAV, InScatteredLightTextureSize,
+				TextureSettings.InScatteredLightSampleSteps,
+				Ctx);
+
+			RHICmdList.DispatchComputeShader(GroupCount.X, GroupCount.Y, GroupCount.Z);
+
+			UnsetShaderUAVs(RHICmdList, Shader, Shader.GetComputeShader());
 
 			DEBUG_READBACK(2, InScatteredLight)
 		}
 
 		// texture readback
-		TransmittanceReadback = FTextureReadback::Create(GraphBuilder, Transmittance, 0, "Transmittance");
-		InScatteredLightReadback = FTextureReadback::Create(GraphBuilder, InScatteredLight, 0, "In-Scattered Light");
+		TransmittanceReadback = FTextureReadback::Create(RHICmdList, Transmittance, 0, "Transmittance");
+		InScatteredLightReadback = FTextureReadback::Create(RHICmdList, InScatteredLight, 0, "In-Scattered Light");
 	}
 
+	// create a lambda that schedules itself to wait without blocking the render thread
+	// until buffer readbacks can be performed
 	auto RunnerFunc = [TransmittanceReadback, InScatteredLightReadback, DebugReadbacks, AsyncCallback](auto&& RunnerFunc) -> void {
 		bool AllReady = TransmittanceReadback->Readback->IsReady() && InScatteredLightReadback->Readback->IsReady();
 		if (AllReady)
@@ -364,7 +482,4 @@ void FAtmospherePrecomputeShaderDispatcher::DispatchRenderThread(
 	AsyncTask(ENamedThreads::ActualRenderingThread, [RunnerFunc] {
 		RunnerFunc(RunnerFunc);
 	});
-
-	// execute the graph
-	GraphBuilder.Execute();
 }

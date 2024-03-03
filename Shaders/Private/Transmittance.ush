@@ -26,20 +26,24 @@ float3 ComputeTransmittance(
 }
 
 float3 GetTransmittance(
-	const Texture2D TransmittanceTexture,
+	const Buffer<float4> TransmittanceTextureBuffer,
+	const uint2 TransmittanceTextureSize,
 	const float RayOriginHeight01,
 	const float RayDirDotProduct)
 {
 	const float y = saturate(1 - (RayDirDotProduct + 1) / 2);
 	const float2 uv = float2(RayOriginHeight01, y);
 
+	// TOOD: trilinear filtering
+	const uint2 UV = uint2(round(uv)) * TransmittanceTextureSize;
+	return TransmittanceTextureBuffer[UV.x * TransmittanceTextureSize.x + UV.y].rgb;
+
+	/*
 #if SUPPORTS_INDEPENDENT_SAMPLERS
 	// always filter during precomputation if we have the capability,
 	// no additional guard needed
 	return Texture2DSample(TransmittanceTexture, GlobalTrilinearClampedSampler, uv).xyz;
 #else
-	uint w, h;
-	TransmittanceTexture.GetDimensions(w, h);
-	return TransmittanceTexture[uv * float2(w, h)].xyz;
 #endif
+	*/
 }

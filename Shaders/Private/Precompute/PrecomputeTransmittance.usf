@@ -7,23 +7,25 @@
 #include "../Transmittance.ush"
 #include "../Intersection.ush"
 
-DEFINE_PRECOMPUTE_CONTEXT_PARAMETERS()
+/**
+ * The buffer to write transmittance data to.
+ */
+RWBuffer<float4> TransmittanceTextureOut;
+
+int TransmittanceTextureWidth;
+int TransmittanceTextureHeight;
 
 /**
  * The amount of density samples to take along the ray.
  */
 int NumSteps;
 
-/**
- * The texture to write transmittance to.
- */
-RWTexture2D<float4> TransmittanceTextureOut;
+DEFINE_PRECOMPUTE_CONTEXT_PARAMETERS()
 
 NUMTHREADS_2D void PrecomputeTransmittanceCS(
 	uint3 id : SV_DispatchThreadID)
 {
-	float2 uv;
-	UV_2D(uv, TransmittanceTextureOut);
+	const float2 uv = float2(id.xy) / float2(TransmittanceTextureWidth, TransmittanceTextureHeight);
 
 	PrecomputeContext Ctx;
 	LOAD_PRECOMPUTE_CONTEXT_PARAMETERS(Ctx);
@@ -55,6 +57,5 @@ NUMTHREADS_2D void PrecomputeTransmittanceCS(
 	const float3 Transmittance = ComputeTransmittance(Ctx,
 		RayOrigin + RayStart * RayDir, RayDir,
 		RayEnd - RayStart, NumSteps);
-
-	TransmittanceTextureOut[id.xy] = float4(Transmittance, 1);
+	TransmittanceTextureOut[id.y * TransmittanceTextureWidth + id.x] = float4(Transmittance, 1);
 }

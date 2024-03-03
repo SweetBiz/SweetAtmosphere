@@ -26,9 +26,9 @@ public:
 	 * @param Callback The callback to run on the game thread when precomputation has finished.
 	 */
 	static void PrecomputeAtmosphericScattering(
-		const FPrecomputedTextureSettings& TextureSettings,
-		const FAtmosphereSettings& AtmosphereSettings,
-		const TFunction<void(FAtmospherePrecomputedTextures Textures)>& Callback);
+		FPrecomputedTextureSettings TextureSettings,
+		FAtmosphereSettings AtmosphereSettings,
+		bool GenerateDebugTextures, TFunction<void(FAtmospherePrecomputedTextures, FAtmospherePrecomputeDebugTextures)> Callback);
 
 	/**
 	 * Precomputes atmospheric scattering textures for
@@ -68,7 +68,6 @@ private:
 	FPrecomputeContext AtmosphereGenerationSettings;
 
 	bool GenerateDebugTextures;
-	FAtmospherePrecomputeDebugTextures DebugTextures;
 };
 
 /**

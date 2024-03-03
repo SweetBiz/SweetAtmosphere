@@ -10,8 +10,10 @@
 	if (AtmosphereSettings.ParticleProfiles.Num() > ProfileIndex)                                                                                             \
 	{                                                                                                                                                         \
 		const auto& Profile = AtmosphereSettings.ParticleProfiles[ProfileIndex];                                                                              \
+		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, ScatteringCoefficientsR) = Profile.ScatteringCoefficients.X;                                     \
+		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, ScatteringCoefficientsG) = Profile.ScatteringCoefficients.Y;                                     \
+		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, ScatteringCoefficientsB) = Profile.ScatteringCoefficients.Z;                                     \
 		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, PhaseFunction) = static_cast<std::underlying_type<EPhaseFunction>::type>(Profile.PhaseFunction); \
-		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, ScatteringCoefficients) = FVector3f(Profile.ScatteringCoefficients);                             \
 		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, ExponentFactor) = Profile.ExponentFactor;                                                        \
 		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, LinearFadeInSize) = Profile.LinearFadeInSize;                                                    \
 		Target.PARTICLE_PROFILE_PARAMETER_NAME(ProfileIndex, LinearFadeOutSize) = Profile.LinearFadeOutSize;                                                  \
@@ -34,13 +36,70 @@ FPrecomputeContext CreatePrecomputeContext(
 	return Ctx;
 }
 
+inline UTexture2D* CreateTexture2D(const TArray<uint8>& Data, int Width, int Height)
+{
+	auto* Texture = UTexture2D::CreateTransient(Width, Height, PF_FloatRGBA);
+
+#if WITH_EDITORONLY_DATA
+	Texture->MipGenSettings = TMGS_NoMipmaps;
+#endif
+	Texture->NeverStream = true;
+	Texture->SRGB = 0;
+	Texture->LODGroup = TEXTUREGROUP_Pixels2D;
+
+	uint8* TargetData = static_cast<uint8*>(Texture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE));
+	FMemory::Memcpy(TargetData, Data.GetData(), Data.Num());
+	Texture->GetPlatformData()->Mips[0].BulkData.Unlock();
+
+	Texture->UpdateResource();
+
+	return Texture;
+}
+
+inline UVolumeTexture* CreateTexture3D(const TArray<uint8>& Data, int Width, int Height, int Depth)
+{
+	auto* Texture = UVolumeTexture::CreateTransient(Width, Height, Depth, PF_FloatRGBA);
+
+#if WITH_EDITORONLY_DATA
+	Texture->MipGenSettings = TMGS_NoMipmaps;
+#endif
+	Texture->NeverStream = true;
+	Texture->SRGB = 0;
+
+	uint8* TargetData = static_cast<uint8*>(Texture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE));
+	FMemory::Memcpy(TargetData, Data.GetData(), Data.Num());
+	Texture->GetPlatformData()->Mips[0].BulkData.Unlock();
+
+	Texture->UpdateResource();
+
+	return Texture;
+}
+
+#define CREATE_TEXTURES_FROM_DATA()                                                                                                                                                                                                     \
+	FAtmospherePrecomputedTextures Textures;                                                                                                                                                                                            \
+	Textures.TransmittanceTexture = CreateTexture2D(TextureData.TransmittanceTextureData, TextureSettings.TransmittanceTextureWidth, TextureSettings.TransmittanceTextureHeight);                                                       \
+	Textures.InScatteredLightTexture = CreateTexture3D(TextureData.InScatteredLightTextureData, TextureSettings.InScatteredLightTextureSize, TextureSettings.InScatteredLightTextureSize, TextureSettings.InScatteredLightTextureSize); \
+	FAtmospherePrecomputeDebugTextures DebugTextures;                                                                                                                                                                                   \
+	for (const auto& [Name, Entry] : DebugTextureData.DebugTextureData)                                                                                                                                                                 \
+	{                                                                                                                                                                                                                                   \
+		const auto& [Data, Size] = Entry;                                                                                                                                                                                               \
+		DebugTextures.DebugTextures.Add(Name,                                                                                                                                                                                           \
+			Size.Z > 0                                                                                                                                                                                                                  \
+				? static_cast<UTexture*>(CreateTexture3D(Data, Size.X, Size.Y, Size.Z))                                                                                                                                                 \
+				: static_cast<UTexture*>(CreateTexture2D(Data, Size.X, Size.Y)));                                                                                                                                                       \
+	}
+
 void UAtmospherePrecomputeAction::PrecomputeAtmosphericScattering(
-	const FPrecomputedTextureSettings& TextureSettings,
-	const FAtmosphereSettings& AtmosphereSettings,
-	const TFunction<void(FAtmospherePrecomputedTextures Textures)>& Callback)
+	FPrecomputedTextureSettings TextureSettings,
+	FAtmosphereSettings AtmosphereSettings,
+	bool GenerateDebugTextures,
+	TFunction<void(FAtmospherePrecomputedTextures, FAtmospherePrecomputeDebugTextures)> Callback)
 {
 	const auto Ctx = CreatePrecomputeContext(AtmosphereSettings);
-	FAtmospherePrecomputeShaderDispatcher::Dispatch(TextureSettings, Ctx, Callback);
+	FAtmospherePrecomputeShaderDispatcher::Dispatch(TextureSettings, Ctx, GenerateDebugTextures, [Callback, TextureSettings](FAtmospherePrecomputedTextureData TextureData, FAtmospherePrecomputedDebugTextureData DebugTextureData) {
+		CREATE_TEXTURES_FROM_DATA()
+		Callback(Textures, DebugTextures);
+	});
 }
 
 UAtmospherePrecomputeAction* UAtmospherePrecomputeAction::PrecomputeAtmosphericScattering(
@@ -73,11 +132,12 @@ void UAtmospherePrecomputeAction::Activate()
 	FAtmospherePrecomputeShaderDispatcher::Dispatch(
 		TextureSettings,
 		AtmosphereGenerationSettings,
-		[this](const auto& Result) {
-			OnComplete.Broadcast(Result, DebugTextures);
+		GenerateDebugTextures,
+		[this](FAtmospherePrecomputedTextureData TextureData, FAtmospherePrecomputedDebugTextureData DebugTextureData) {
+			CREATE_TEXTURES_FROM_DATA()
+			OnComplete.Broadcast(Textures, DebugTextures);
 			SetReadyToDestroy();
-		},
-		GenerateDebugTextures ? &DebugTextures : nullptr);
+		});
 }
 
 UMaterialInstanceDynamic* UAtmosphereMaterialHelper::CreateAtmosphereMaterial(

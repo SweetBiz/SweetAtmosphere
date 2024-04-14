@@ -25,25 +25,25 @@ struct SWEETATMOSPHERESHADERS_API FParticleProfile
 	 * The scattering coefficients for this particle type at maximum density.
 	 */
 	UPROPERTY(BlueprintReadWrite)
-	FVector ScatteringCoefficients;
+	FVector ScatteringCoefficients = FVector::Zero();
 
 	/**
 	 * The factor f in the density formula exp(-h * f)
 	 */
 	UPROPERTY(BlueprintReadWrite)
-	float ExponentFactor;
+	float ExponentFactor = 1;
 
 	/**
 	 * The part of the atmosphere over which density should fade in.
 	 */
 	UPROPERTY(BlueprintReadWrite)
-	float LinearFadeInSize;
+	float LinearFadeInSize = 0;
 
 	/**
 	 * The part of the atmosphere over which density should fade out.
 	 */
 	UPROPERTY(BlueprintReadWrite)
-	float LinearFadeOutSize;
+	float LinearFadeOutSize = 1;
 };
 
 /**
